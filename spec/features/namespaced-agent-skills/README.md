@@ -36,7 +36,7 @@ the standard schema identifier and no Cursor-only duplicate tree.
 
 ### Journey
 
-1. A user installs the DataTug plugin in Claude Code or Codex. **Observable
+1. A user installs the DataTug plugin in Claude Code, Codex, or Cursor. **Observable
    good result:** the native inventory contains exactly the nine `datatug-*`
    skills from this repository's `skills/` directory.
 2. The user asks the agent to scan a database, manage a project, run a query,
@@ -52,7 +52,7 @@ the standard schema identifier and no Cursor-only duplicate tree.
 
 ### AC: namespaced-inventory
 
-**Given** an isolated Claude Code or Codex package installation
+**Given** an isolated Claude Code, Codex, or Cursor package installation
 **When** the native host inventory is read
 **Then** it finds exactly `datatug-datasets`, `datatug-init`,
 `datatug-install`, `datatug-projects`, `datatug-queries`,
@@ -84,6 +84,14 @@ package metadata, not unexercised host-runtime discovery.
 ## Open Questions
 
 None at this time.
+
+## Verification Status
+
+Claude Code and Codex each discovered the nine namespaced skills in isolated
+installations. Cursor discovery remains an acceptance requirement and is
+pending Computer Use access; parsing its manifest alone does not complete
+that requirement. Gemini CLI and GitHub Copilot have declared metadata, with
+their runtime behavior unverified.
 
 ---
 *This document follows the https://specscore.md/feature-specification*
