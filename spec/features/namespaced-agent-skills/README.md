@@ -1,12 +1,12 @@
 ---
 format: https://specscore.md/feature-specification
-status: Approved
+status: Implementing
 ---
 
 # Feature: Namespaced DataTug Agent Skills
 
 > [SpecScore.**Studio**](https://specscore.studio): | [Explore](https://specscore.studio/app/github.com/datatug/ai-plugin/spec/features/namespaced-agent-skills?op=explore) | [Edit](https://specscore.studio/app/github.com/datatug/ai-plugin/spec/features/namespaced-agent-skills?op=edit) | [Ask question](https://specscore.studio/app/github.com/datatug/ai-plugin/spec/features/namespaced-agent-skills?op=ask) | [Request change](https://specscore.studio/app/github.com/datatug/ai-plugin/spec/features/namespaced-agent-skills?op=request-change) |
-**Status:** Approved
+**Status:** Implementing
 **Source Ideas:** —
 
 ## Summary
@@ -22,21 +22,22 @@ retaining the existing command guidance and progressive reference loading.
 ## Behavior
 
 The plugin publishes the same nine skill payloads from the canonical `skills/`
-tree under `datatug-*` directory and frontmatter names. Claude Code, Codex,
-GitHub Copilot, Gemini CLI, and Cursor Agent Plugins discover that one tree;
-no host-specific skill copies are introduced.
+tree under `datatug-*` directory and frontmatter names. The Claude Code and
+Codex package formats have isolated native-discovery receipts for that one
+tree. The GitHub Copilot, Gemini CLI, and Cursor Agent Plugins manifests
+declare the same canonical tree; their live runtimes are not exercised by this
+Feature.
 
-The plugin metadata advances from `0.0.1` to the DataTug plugin patch release
-`0.0.2`. Existing capability text and every resource beneath each skill remain
+The DataTug plugin metadata advances from DataTug plugin `0.0.1` to the DataTug
+plugin patch release `0.0.2`. Existing capability text and every resource beneath each skill remain
 in place, with internal links and the install fallback updated to the
-namespaced name. Cursor receives the portable root Agent Plugins manifest with
-the standard schema identifier, so it discovers the same skills without a
-Cursor-only duplicate tree.
+namespaced name. Cursor receives a portable root Agent Plugins manifest with
+the standard schema identifier and no Cursor-only duplicate tree.
 
 ### Journey
 
-1. A user installs the DataTug plugin in a supported agent host. **Observable
-   good result:** the host inventory contains exactly the nine `datatug-*`
+1. A user installs the DataTug plugin in Claude Code or Codex. **Observable
+   good result:** the native inventory contains exactly the nine `datatug-*`
    skills from this repository's `skills/` directory.
 2. The user asks the agent to scan a database, manage a project, run a query,
    serve the Web UI, validate metadata, initialize a project, inspect datasets,
@@ -51,8 +52,8 @@ Cursor-only duplicate tree.
 
 ### AC: namespaced-inventory
 
-**Given** the published plugin tree
-**When** a supported host discovers skills
+**Given** an isolated Claude Code or Codex package installation
+**When** the native host inventory is read
 **Then** it finds exactly `datatug-datasets`, `datatug-init`,
 `datatug-install`, `datatug-projects`, `datatug-queries`,
 `datatug-query-builder`, `datatug-scan`, `datatug-serve`, and
@@ -68,10 +69,11 @@ the renamed canonical directory.
 ### AC: manifest-closure
 
 **Given** the Claude Code, Codex, GitHub Copilot, Gemini CLI, and Cursor Agent
-Plugins manifests
+Plugins metadata files
 **When** each is parsed
 **Then** every declared skill path resolves to the one canonical `skills/`
-tree and every metadata version is `0.0.2`.
+tree and every metadata version is DataTug plugin `0.0.2`; this verifies
+package metadata, not unexercised host-runtime discovery.
 
 ### AC: missing-cli-fallback
 

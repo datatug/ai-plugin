@@ -1,7 +1,6 @@
 ---
 name: datatug-init
 description: Create a new DataTug project — scaffolds the project file layout at a specified path. Use when starting a new data exploration project.
-user-invocable: true
 ---
 
 # datatug init

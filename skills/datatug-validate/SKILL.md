@@ -1,7 +1,6 @@
 ---
 name: datatug-validate
 description: Run validation scripts on a DataTug project — verify metadata, queries, and pipelines are well-formed. Use as a CI gate or before committing changes.
-user-invocable: true
 ---
 
 # datatug validate

@@ -1,7 +1,6 @@
 ---
 name: datatug-scan
 description: Add or update database metadata in a DataTug project by scanning a configured data source. Use after adding a new database connection, or to refresh schema metadata after upstream changes.
-user-invocable: true
 ---
 
 # datatug scan

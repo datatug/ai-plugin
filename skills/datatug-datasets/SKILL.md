@@ -1,7 +1,6 @@
 ---
 name: datatug-datasets
 description: List, define, and read datasets in a DataTug project. Covers `datatug datasets`, `datatug dataset-def`, and `datatug dataset-data`. Use to enumerate datasets, inspect a definition, or print recordset data.
-user-invocable: true
 ---
 
 # datatug datasets

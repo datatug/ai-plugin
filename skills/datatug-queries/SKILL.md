@@ -1,7 +1,6 @@
 ---
 name: datatug-queries
 description: List and run saved queries in a DataTug project. Use to discover available queries or execute a parametrised query for ad-hoc investigation.
-user-invocable: true
 ---
 
 # datatug queries

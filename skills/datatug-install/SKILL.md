@@ -1,7 +1,6 @@
 ---
 name: datatug-install
 description: "Show install instructions for the datatug CLI. Use when `datatug` is not on PATH, when another skill reports `command not found: datatug`, or when the user asks how to install, reinstall, or update the CLI."
-user-invocable: true
 ---
 
 # Install the datatug CLI

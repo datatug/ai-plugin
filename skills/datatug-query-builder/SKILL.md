@@ -1,7 +1,6 @@
 ---
 name: datatug-query-builder
 description: Build and progressively refine a read-only DataTug query by conversation, driving the datatug serve query-builder over MCP. The query and results show live in the DataTug Web UI; you (the agent) never write SQL by hand. Use when the user wants to build, refine, or explore a query against a DataTug connection.
-user-invocable: true
 ---
 
 # DataTug Query Builder

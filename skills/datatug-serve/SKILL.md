@@ -1,7 +1,6 @@
 ---
 name: datatug-serve
 description: Start the DataTug HTTP server — exposes a REST API the DataTug Web UI consumes. Use during local development or to run a shared DataTug instance for a team.
-user-invocable: true
 ---
 
 # datatug serve

@@ -1,7 +1,6 @@
 ---
 name: datatug-projects
 description: List and manage DataTug projects registered on this machine. Use to discover what projects exist, add a new one, or remove a stale entry.
-user-invocable: true
 ---
 
 # datatug projects

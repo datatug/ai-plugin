@@ -17,7 +17,7 @@ This repository contains the plugin source. It is installed on top of the [`data
 
 ## Install
 
-The same `skills/<name>/SKILL.md` payload is shared across all agents - only the manifest each agent reads differs.
+The same `skills/<name>/SKILL.md` payload is shared across package formats; each host reads its own manifest. This repository has native inventory receipts for Claude Code and Codex. The Gemini CLI, GitHub Copilot, and Cursor metadata is declarative here and needs host-runtime validation in those environments.
 
 ### Claude Code
 
@@ -42,7 +42,7 @@ Then enable the `datatug` plugin from Codex's plugin directory. Codex reads [`.c
 gemini extensions install https://github.com/datatug/ai-plugin
 ```
 
-Gemini reads [`gemini-extension.json`](gemini-extension.json) and auto-discovers the bundled `skills/` tree.
+[`gemini-extension.json`](gemini-extension.json) declares the bundled `skills/` tree for Gemini CLI; Gemini runtime discovery is not exercised in this repository.
 
 ### GitHub Copilot CLI
 
@@ -50,11 +50,11 @@ Gemini reads [`gemini-extension.json`](gemini-extension.json) and auto-discovers
 copilot plugin install datatug/ai-plugin
 ```
 
-Copilot reads [`.github/plugin.json`](.github/plugin.json).
+[`.github/plugin.json`](.github/plugin.json) declares the skills for GitHub Copilot; Copilot runtime discovery is not exercised in this repository.
 
 ### Cursor
 
-Cursor recognizes the root [`plugin.json`](plugin.json) as an Agent Plugins manifest and auto-discovers this repository's canonical `skills/` tree. Install the published plugin through a Cursor marketplace, or place this repository under `~/.cursor/plugins/local/datatug` for local development and reload Cursor.
+The root [`plugin.json`](plugin.json) declares the portable Agent Plugins schema supported by Cursor. For local development, follow [Cursor's local plugin folder guidance](https://cursor.com/docs/plugins): place this repository under `~/.cursor/plugins/local/datatug` and reload Cursor. Cursor runtime discovery is not exercised in this repository.
 
 ## First use
 
