@@ -1,7 +1,7 @@
 {
   "name": "datatug",
   "description": "DataTug CLI plugin: skills that teach AI agents how to use the datatug CLI for data exploration, dataset management, schema scanning, and query execution.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": {
     "name": "DataTug"
   },

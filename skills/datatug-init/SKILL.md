@@ -1,7 +1,6 @@
 ---
-name: init
+name: datatug-init
 description: Create a new DataTug project — scaffolds the project file layout at a specified path. Use when starting a new data exploration project.
-user-invocable: true
 ---
 
 # datatug init
@@ -14,7 +13,7 @@ Wraps `datatug init` — scaffold a new DataTug project.
 command -v datatug >/dev/null 2>&1
 ```
 
-On miss, invoke `/datatug:install` and stop until `datatug --help` succeeds.
+On miss, invoke `/datatug:datatug-install` and stop until `datatug --help` succeeds.
 
 ## Command
 
@@ -39,4 +38,4 @@ A bare `datatug init` (no arguments) will not work.
 
 - Creates a `datatug/` directory under `<projectPath>`; the project summary is stored as `datatug-project.json`. Errors if the target already contains a `datatug` project.
 - Run `datatug init --help` for the authoritative argument list.
-- After init, register the project with [`projects add`](../projects/references/add.md), add data sources with [`scan`](../scan/SKILL.md), and define datasets with [`datasets`](../datasets/SKILL.md).
+- After init, register the project with [`datatug-projects add`](../datatug-projects/references/add.md), add data sources with [`datatug-scan`](../datatug-scan/SKILL.md), and define datasets with [`datatug-datasets`](../datatug-datasets/SKILL.md).

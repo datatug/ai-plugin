@@ -16,7 +16,7 @@ status: Approved
 How might we let a user (and an AI assisting them) describe their data's meaning in plain language — "in table U, column PC is the user's primary currency" — and reliably capture it as structured, validatable datatug entity/table/column metadata that downstream tooling can reuse?
 
 ## Context
-The `datatug` plugin in `ai-plugin` today ships only CLI-wrapper skills (`init`, `validate`, `projects`, `datasets`, `queries`, `scan`, `serve`, `install`). They expose what the CLI can already do; none of them help a user *define the meaning* of their data.
+The `datatug` plugin in `ai-plugin` today ships only CLI-wrapper skills (`datatug-init`, `datatug-validate`, `datatug-projects`, `datatug-datasets`, `datatug-queries`, `datatug-scan`, `datatug-serve`, `datatug-install`). They expose what the CLI can already do; none of them help a user *define the meaning* of their data.
 
 The datatug data model, however, already has the bones for semantic metadata:
 - `entities/<Name>/<Name>.entity.json` is a first-class artifact. The Go model (`datatug-core/pkg/datatug/entities.go`) defines `Entity{ Fields, Tables }`, `EntityField{ id, type, title, isKeyField, NamePatterns }`, and `EntityFieldRef{ Entity, Field }`.
@@ -63,14 +63,14 @@ A two-to-three-week spike that nails one job: **turn a plain-language statement 
 | Must-be-true | A "currency code" semantic type is expressible. | Check `KnownTypes` and the `extends` mechanism; decide between a new known type, a String + namePattern, or an `extends` to an ISO currency def in `datatug-meta-iso`. |
 | Must-be-true | The minimal authoring operations can be exposed as clean, composable CLI verbs in `datatug-cli`. | Draft the verb surface (`entity add`, `entity field set`, `entity link-table`, `column set-meta`, read-back) and prototype against the demo project. |
 | Should-be-true | NL → intent translation is reliable enough that owners and analysts trust it (entity/table/column resolution + disambiguation). | Build the skill against the chinook demo; measure how often it resolves vs. needs to ask. |
-| Should-be-true | Renaming existing skills to a `cli-` prefix is acceptable (plugin is v0.0.1, low install base). | Confirm with maintainer; document as a one-time breaking rename. |
+| Should-be-true | Renaming existing skills to the `datatug-` prefix is acceptable (DataTug plugin v0.0.2, low install base). | Confirm with maintainer; document as a one-time breaking rename. |
 | Should-be-true | Precedence resolves overlaps predictably — explicit mappings always win; overlapping patterns order by specificity (table-qualified before global). | Prototype the pattern-vs-pattern specificity ordering against deliberately overlapping rules on the demo project. |
 | Should-be-true | A derived copy of resolved links can be materialized onto entities for fast reads and kept consistent with the authoritative mapping. | Prototype generate-from-mapping + a `datatug validate` check that flags drift, plus a regenerate step; confirm the copy is marked generated so it is never hand-edited. |
 | Might-be-true | Scan-derived `NamePatterns` can auto-suggest field mappings well enough to make the seeded draft genuinely useful. | Run scan on a demo DB and inspect how many columns get plausible field suggestions. |
 
 ## SpecScore Integration
 - **New Features this would create:** (1) entity/semantic **authoring CLI verbs** in `datatug-cli`; (2) an **NL semantic-authoring skill** in `ai-plugin` that wraps them; (3) a **read-back skill** that renders current semantic metadata.
-- **Existing Features affected:** existing CLI-wrapper skills (`cli-` prefix rename); `scan` (becomes the seed source for initial drafts); the datatug-core data model (a **new dedicated mapping artifact** + its schema/validation, rather than altering scanned-column or entity structures).
+- **Existing Features affected:** existing CLI-wrapper skills (`datatug-` prefix rename); `scan` (becomes the seed source for initial drafts); the datatug-core data model (a **new dedicated mapping artifact** + its schema/validation, rather than altering scanned-column or entity structures).
 - **Dependencies:** sequencing is deliberate — this skills Idea is defined **first** and is the source of truth for designing the CLI verb surface. A CLI Idea/Feature is then derived from it in `datatug-cli` (already spec-managed) and implemented; the skills Features (here in `ai-plugin`) are built on top once the verbs land.
 
 ## Open Questions

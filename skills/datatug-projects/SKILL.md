@@ -1,7 +1,6 @@
 ---
-name: projects
+name: datatug-projects
 description: List and manage DataTug projects registered on this machine. Use to discover what projects exist, add a new one, or remove a stale entry.
-user-invocable: true
 ---
 
 # datatug projects
@@ -14,7 +13,7 @@ Wraps `datatug projects` — list and manage the DataTug project registry.
 command -v datatug >/dev/null 2>&1
 ```
 
-On miss, invoke `/datatug:install` and stop.
+On miss, invoke `/datatug:datatug-install` and stop.
 
 ## Pick a verb
 

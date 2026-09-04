@@ -8,7 +8,7 @@ The plugin README declares the `datatug` CLI a prerequisite, but nothing in the 
 
 ## Recommended Direction
 
-Ship a single skill — `/datatug:install` — that points the user at Homebrew or the `go install` path. Every other skill performs a pre-flight `command -v datatug` check; on miss, it emits a single error referencing the install skill. Reject bundling binaries, reject a SessionStart hook, reject a long-lived "doctor" skill.
+Ship a single skill — `/datatug:datatug-install` — that points the user at Homebrew or the `go install` path. Every other skill performs a pre-flight `command -v datatug` check; on miss, it emits a single error referencing the install skill. Reject bundling binaries, reject a SessionStart hook, reject a long-lived "doctor" skill.
 
 The pattern is shared with the sibling [`specscore`](https://github.com/synchestra-io/ai-plugin-specscore), [`synchestra`](https://github.com/synchestra-io/ai-plugin-synchestra), and [`ingitdb`](https://github.com/ingitdb/ingitdb-ai-skills) plugins. The install skill is essentially a template with the CLI name and install commands swapped.
 
