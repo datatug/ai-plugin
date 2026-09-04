@@ -7,32 +7,32 @@ This plugin follows the same design as the sibling [`specscore`](https://github.
 ## Invocation
 
 ```
-/datatug:<skill-name>
+/datatug:datatug-<skill-name>
 ```
 
 ## Skill categories
 
-- **Infrastructure skills** — plugin-level actions not backed by a `datatug` CLI command. Today: only `install`.
+- **Infrastructure skills** — plugin-level actions not backed by a `datatug` CLI command. Today: only `datatug-install`.
 - **CLI-wrapper skills** — one skill per major `datatug` CLI surface area. Each wrapper assumes the CLI is already installed; see the [Pre-flight pattern](#pre-flight-pattern) below.
 
 ## Available infrastructure skills
 
 | Skill | Purpose |
 |---|---|
-| [`install/`](install/SKILL.md) | Show install instructions for the `datatug` CLI. |
+| [`datatug-install/`](datatug-install/SKILL.md) | Show install instructions for the `datatug` CLI. |
 
 ## Available CLI-wrapper skills
 
 | Skill | Wraps | References |
 |---|---|---|
-| [`init/`](init/SKILL.md) | `datatug init` | inline |
-| [`projects/`](projects/SKILL.md) | `datatug projects` | `list`, `add` |
-| [`datasets/`](datasets/SKILL.md) | `datatug datasets / dataset-def / dataset-data` | `list`, `def`, `data` |
-| [`scan/`](scan/SKILL.md) | `datatug scan` | `scan` |
-| [`queries/`](queries/SKILL.md) | `datatug queries` | `list`, `run` |
-| [`validate/`](validate/SKILL.md) | `datatug validate` | inline |
-| [`serve/`](serve/SKILL.md) | `datatug serve` | inline |
-| [`query-builder/`](query-builder/SKILL.md) | `datatug serve` (MCP query builder) | inline |
+| [`datatug-init/`](datatug-init/SKILL.md) | `datatug init` | inline |
+| [`datatug-projects/`](datatug-projects/SKILL.md) | `datatug projects` | `list`, `add` |
+| [`datatug-datasets/`](datatug-datasets/SKILL.md) | `datatug datasets / dataset-def / dataset-data` | `list`, `def`, `data` |
+| [`datatug-scan/`](datatug-scan/SKILL.md) | `datatug scan` | `scan` |
+| [`datatug-queries/`](datatug-queries/SKILL.md) | `datatug queries` | `list`, `run` |
+| [`datatug-validate/`](datatug-validate/SKILL.md) | `datatug validate` | inline |
+| [`datatug-serve/`](datatug-serve/SKILL.md) | `datatug serve` | inline |
+| [`datatug-query-builder/`](datatug-query-builder/SKILL.md) | `datatug serve` (MCP query builder) | inline |
 
 ## Pre-flight pattern
 
@@ -49,7 +49,7 @@ Every CLI-wrapper skill must verify that `datatug` is installed before invoking 
 > If this check fails (exit `127` / `command not found`), stop and tell the user exactly:
 >
 > > The `datatug` CLI is not installed. Either:
-> > - invoke `/datatug:install` to see install options, or
+> > - invoke `/datatug:datatug-install` to see install options, or
 > > - install per <https://github.com/datatug/datatug-cli#installation>.
 > >
 > > Then retry your command.
@@ -64,4 +64,4 @@ The CLI exposes additional commands not yet covered by a skill — invoke them d
 
 ## Status
 
-**Shipped:** `install/` (infrastructure), `init/`, `projects/`, `datasets/`, `scan/`, `queries/`, `validate/`, `serve/` (CLI wrappers).
+**Shipped:** `datatug-install/` (infrastructure), `datatug-init/`, `datatug-projects/`, `datatug-datasets/`, `datatug-scan/`, `datatug-queries/`, `datatug-validate/`, `datatug-serve/` (CLI wrappers).

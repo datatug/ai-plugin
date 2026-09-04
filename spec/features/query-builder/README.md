@@ -15,7 +15,7 @@ status: Approved
 
 ## Summary
 
-The agent **skill** that teaches an AI-agent terminal to build and progressively refine a DataTug query by driving the serve-brokered query builder's MCP tools. It is the agent-side surface of the Serve-Brokered AI Query Builder Capability (`specscore:feature/serve-brokered-query-builder@github.com/datatug/datatug`): the skill ensures a `datatug serve` daemon is reachable, creates a tab (by default in **DTQL mode**, where the query is a dalgo AST whose textual form is 1:1 DTQL-YAML) and hands the user a deep link to open the Web UI, and on each natural-language request constructs the prose + structured delta + full query and calls `apply_change` — staying quiet in the terminal by default and offering candidate options when unsure. When the AST cannot express the user's query (or the user wants raw native), the skill uses **native mode** — sending the connection's native query text verbatim — and may convert a DTQL tab to native one-way via `convert_to_native`. This Feature specifies what the skill must instruct; the skill file (`skills/query-builder/SKILL.md`) is its implementation.
+The agent **skill** that teaches an AI-agent terminal to build and progressively refine a DataTug query by driving the serve-brokered query builder's MCP tools. It is the agent-side surface of the Serve-Brokered AI Query Builder Capability (`specscore:feature/serve-brokered-query-builder@github.com/datatug/datatug`): the skill ensures a `datatug serve` daemon is reachable, creates a tab (by default in **DTQL mode**, where the query is a dalgo AST whose textual form is 1:1 DTQL-YAML) and hands the user a deep link to open the Web UI, and on each natural-language request constructs the prose + structured delta + full query and calls `apply_change` — staying quiet in the terminal by default and offering candidate options when unsure. When the AST cannot express the user's query (or the user wants raw native), the skill uses **native mode** — sending the connection's native query text verbatim — and may convert a DTQL tab to native one-way via `convert_to_native`. This Feature specifies what the skill must instruct; the skill file (`skills/datatug-query-builder/SKILL.md`) is its implementation.
 
 ## Problem
 
@@ -31,7 +31,7 @@ The skill MUST instruct the agent to build and refine queries exclusively by dri
 
 #### REQ: daemon-preflight
 
-The skill MUST include a pre-flight that verifies `datatug` is installed and a `serve` daemon exposing the query-builder MCP endpoint is reachable; on a miss it MUST direct the user to start `datatug serve` (or run `/datatug:install`) and stop, rather than proceeding, consistent with the other skills' pre-flight convention.
+The skill MUST include a pre-flight that verifies `datatug` is installed and a `serve` daemon exposing the query-builder MCP endpoint is reachable; on a miss it MUST direct the user to start `datatug serve` (or run `/datatug:datatug-install`) and stop, rather than proceeding, consistent with the other skills' pre-flight convention.
 
 ### Session bootstrap
 
@@ -75,7 +75,7 @@ The skill MUST instruct the agent to produce only read-only queries in both mode
 |---|---|
 | Daemon `serve-brokered-query-builder@github.com/datatug/datatug-cli` | The MCP server this skill drives (`create_tab` / `apply_change` / `inspect` / `convert_to_native` / `run`). |
 | Capability `serve-brokered-query-builder@github.com/datatug/datatug` | This skill is the agent-side surface realizing the Capability's `apply-change-payload`, `terminal-quiet-by-default`, `candidate-options`, and `read-only-queries` from the agent's perspective. |
-| [install](../../skills/install/SKILL.md), other skills | Shares the `datatug`-on-PATH pre-flight convention and the `/datatug:install` fallback. |
+| [datatug-install](../../skills/datatug-install/SKILL.md), other skills | Shares the `datatug`-on-PATH pre-flight convention and the `/datatug:datatug-install` fallback. |
 
 ## Acceptance Criteria
 
@@ -89,7 +89,7 @@ The skill MUST instruct the agent to produce only read-only queries in both mode
 
 **Given** an environment where `datatug` is missing or no query-builder daemon is reachable
 **When** the agent starts the skill
-**Then** it runs the pre-flight check and directs the user to start `datatug serve` (or `/datatug:install`) and stops, instead of attempting to build a query.
+**Then** it runs the pre-flight check and directs the user to start `datatug serve` (or `/datatug:datatug-install`) and stops, instead of attempting to build a query.
 
 ### AC: creates-tab-and-shares-link (verifies REQ:create-tab-and-share-link)
 

@@ -1,5 +1,5 @@
 {
   "name": "datatug",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "DataTug CLI skills for Gemini CLI: data exploration, dataset management, schema scanning, and query execution. Gemini auto-discovers the bundled skills/ tree."
 }

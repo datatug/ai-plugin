@@ -1,6 +1,6 @@
 ---
-name: install
-description: Show install instructions for the datatug CLI. Use when `datatug` is not on PATH, when another skill reports `command not found: datatug`, or when the user asks how to install, reinstall, or update the CLI.
+name: datatug-install
+description: "Show install instructions for the datatug CLI. Use when `datatug` is not on PATH, when another skill reports `command not found: datatug`, or when the user asks how to install, reinstall, or update the CLI."
 user-invocable: true
 ---
 
@@ -20,11 +20,11 @@ This skill **shows the user how to install** the [`datatug`](https://github.com/
 
 ## What to show the user
 
-### macOS — Homebrew
+### macOS — Homebrew cask
 
 ```bash
 brew tap datatug/tap
-brew install datatug
+brew install --cask datatug
 ```
 
 ### Go (any platform)

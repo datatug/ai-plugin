@@ -9,9 +9,9 @@ This repository contains the plugin source. It is installed on top of the [`data
 | Directory | Description |
 |---|---|
 | [`skills/`](skills/README.md) | Agent skills - one per major `datatug` CLI surface area, progressively loaded per-verb |
-| [`commands/`](commands/install.md) | Slash-command aliases for skills |
 | [`.claude-plugin/`](.claude-plugin/plugin.json) | Claude Code plugin manifest |
 | [`.codex-plugin/`](.codex-plugin/plugin.json) | Codex plugin manifest |
+| [`plugin.json`](plugin.json) | Portable Agent Plugins manifest for Cursor and other compatible hosts |
 | [`gemini-extension.json`](gemini-extension.json) | Gemini CLI extension manifest |
 | [`.github/plugin.json`](.github/plugin.json) | GitHub Copilot CLI / VS Code agent plugin manifest |
 
@@ -54,18 +54,13 @@ Copilot reads [`.github/plugin.json`](.github/plugin.json).
 
 ### Cursor
 
-Cursor has no remote-install command - it loads skills from `.cursor/skills/` (project) or `~/.cursor/skills/` (global). Add these skills by copying them in:
-
-```
-git clone https://github.com/datatug/ai-plugin
-mkdir -p .cursor/skills && cp -R ai-plugin/skills/* .cursor/skills/
-```
+Cursor recognizes the root [`plugin.json`](plugin.json) as an Agent Plugins manifest and auto-discovers this repository's canonical `skills/` tree. Install the published plugin through a Cursor marketplace, or place this repository under `~/.cursor/plugins/local/datatug` for local development and reload Cursor.
 
 ## First use
 
 The `datatug` CLI must be on your `PATH` before any wrapper skill can run. Options:
 
-- Invoke `/datatug:install` inside Claude Code - the [install skill](skills/install/SKILL.md) shows the platform-appropriate install commands.
+- Invoke `/datatug:datatug-install` inside Claude Code - the [install skill](skills/datatug-install/SKILL.md) shows the platform-appropriate install commands.
 - Or install directly per the [DataTug CLI installation guide](https://github.com/datatug/datatug-cli#installation).
 
 Verify with `datatug --help`.

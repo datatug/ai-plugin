@@ -1,5 +1,5 @@
 ---
-name: datasets
+name: datatug-datasets
 description: List, define, and read datasets in a DataTug project. Covers `datatug datasets`, `datatug dataset-def`, and `datatug dataset-data`. Use to enumerate datasets, inspect a definition, or print recordset data.
 user-invocable: true
 ---
@@ -14,7 +14,7 @@ Wraps the DataTug dataset command surface: `datasets`, `dataset-def`, `dataset-d
 command -v datatug >/dev/null 2>&1
 ```
 
-On miss, invoke `/datatug:install` and stop.
+On miss, invoke `/datatug:datatug-install` and stop.
 
 ## Pick a verb
 

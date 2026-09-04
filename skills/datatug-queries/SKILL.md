@@ -1,5 +1,5 @@
 ---
-name: queries
+name: datatug-queries
 description: List and run saved queries in a DataTug project. Use to discover available queries or execute a parametrised query for ad-hoc investigation.
 user-invocable: true
 ---
@@ -14,7 +14,7 @@ Wraps `datatug queries` — list and run saved queries in a DataTug project.
 command -v datatug >/dev/null 2>&1
 ```
 
-On miss, invoke `/datatug:install` and stop.
+On miss, invoke `/datatug:datatug-install` and stop.
 
 ## Pick a verb
 

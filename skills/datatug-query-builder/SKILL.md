@@ -1,5 +1,5 @@
 ---
-name: query-builder
+name: datatug-query-builder
 description: Build and progressively refine a read-only DataTug query by conversation, driving the datatug serve query-builder over MCP. The query and results show live in the DataTug Web UI; you (the agent) never write SQL by hand. Use when the user wants to build, refine, or explore a query against a DataTug connection.
 user-invocable: true
 ---
@@ -16,7 +16,7 @@ Build a query *with* the user by driving the `datatug serve` query-builder daemo
 command -v datatug >/dev/null 2>&1
 ```
 
-On miss, invoke `/datatug:install` and stop.
+On miss, invoke `/datatug:datatug-install` and stop.
 
 Then confirm a query-builder daemon is reachable over MCP. If no `datatug serve` daemon with the query builder is connected, tell the user to start one and stop — do **not** try to build the query another way:
 
