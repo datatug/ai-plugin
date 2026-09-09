@@ -18,7 +18,7 @@ datatug projects add -p <project-id> -d <path-to-project-directory>
 ## When to use
 
 - After cloning a DataTug project repo from Git.
-- After scaffolding a new project with [`init`](../../init/SKILL.md).
+- After scaffolding a new project with [`datatug-init`](../../datatug-init/SKILL.md).
 
 ## Notes
 

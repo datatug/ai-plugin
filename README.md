@@ -9,15 +9,15 @@ This repository contains the plugin source. It is installed on top of the [`data
 | Directory | Description |
 |---|---|
 | [`skills/`](skills/README.md) | Agent skills - one per major `datatug` CLI surface area, progressively loaded per-verb |
-| [`commands/`](commands/install.md) | Slash-command aliases for skills |
 | [`.claude-plugin/`](.claude-plugin/plugin.json) | Claude Code plugin manifest |
 | [`.codex-plugin/`](.codex-plugin/plugin.json) | Codex plugin manifest |
+| [`plugin.json`](plugin.json) | Portable Agent Plugins manifest for Cursor and other compatible hosts |
 | [`gemini-extension.json`](gemini-extension.json) | Gemini CLI extension manifest |
 | [`.github/plugin.json`](.github/plugin.json) | GitHub Copilot CLI / VS Code agent plugin manifest |
 
 ## Install
 
-The same `skills/<name>/SKILL.md` payload is shared across all agents - only the manifest each agent reads differs.
+The same `skills/<name>/SKILL.md` payload is shared across package formats; each host reads its own manifest. This repository has native inventory receipts for Claude Code and Codex. The Gemini CLI, GitHub Copilot, and Cursor metadata is declarative here and needs host-runtime validation in those environments.
 
 ### Claude Code
 
@@ -42,7 +42,7 @@ Then enable the `datatug` plugin from Codex's plugin directory. Codex reads [`.c
 gemini extensions install https://github.com/datatug/ai-plugin
 ```
 
-Gemini reads [`gemini-extension.json`](gemini-extension.json) and auto-discovers the bundled `skills/` tree.
+[`gemini-extension.json`](gemini-extension.json) declares the bundled `skills/` tree for Gemini CLI; Gemini runtime discovery is not exercised in this repository.
 
 ### GitHub Copilot CLI
 
@@ -50,22 +50,17 @@ Gemini reads [`gemini-extension.json`](gemini-extension.json) and auto-discovers
 copilot plugin install datatug/ai-plugin
 ```
 
-Copilot reads [`.github/plugin.json`](.github/plugin.json).
+[`.github/plugin.json`](.github/plugin.json) declares the skills for GitHub Copilot; Copilot runtime discovery is not exercised in this repository.
 
 ### Cursor
 
-Cursor has no remote-install command - it loads skills from `.cursor/skills/` (project) or `~/.cursor/skills/` (global). Add these skills by copying them in:
-
-```
-git clone https://github.com/datatug/ai-plugin
-mkdir -p .cursor/skills && cp -R ai-plugin/skills/* .cursor/skills/
-```
+The root [`plugin.json`](plugin.json) declares the portable Agent Plugins schema supported by Cursor. For local development, follow [Cursor's local plugin folder guidance](https://cursor.com/docs/plugins): place this repository under `~/.cursor/plugins/local/datatug` and reload Cursor. Cursor runtime discovery is not exercised in this repository.
 
 ## First use
 
 The `datatug` CLI must be on your `PATH` before any wrapper skill can run. Options:
 
-- Invoke `/datatug:install` inside Claude Code - the [install skill](skills/install/SKILL.md) shows the platform-appropriate install commands.
+- Invoke `/datatug:datatug-install` inside Claude Code - the [install skill](skills/datatug-install/SKILL.md) shows the platform-appropriate install commands.
 - Or install directly per the [DataTug CLI installation guide](https://github.com/datatug/datatug-cli#installation).
 
 Verify with `datatug --help`.
