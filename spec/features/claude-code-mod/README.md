@@ -72,7 +72,7 @@ The mod is read-only. It does not run queries, guard tool calls, or edit project
 
 **Given** the mod's source
 **When** `claude plugin validate` lists its `hooks:` and `calls:`
-**Then** the calls contain file reads and interface drawing only: no process start, network request or file write.
+**Then** the calls are limited to `$.fs.exists`, `$.fs.read`, `$.fs.list`, `$.session.cwd`, `$.command.register` and `$.ui.*`: no `process.*`, `http.*` or `fs.write` call.
 
 ### AC: other-manifests-unchanged
 
