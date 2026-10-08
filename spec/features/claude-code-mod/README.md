@@ -19,7 +19,7 @@ The plugin's skills teach Claude how to drive the `datatug` CLI, but the user ha
 
 ## Behavior
 
-The mod lives in this repository next to the skills (`hooks/hooks.json`, `hooks/register.js`, `lib/project.js`, `lib/view.js`) and is installed by the existing `datatug` plugin. Only the Claude Code manifest references it; the Codex, Gemini CLI, Copilot and Cursor manifests are unchanged.
+The mod lives in this repository next to the skills (`hooks/hooks.json`, `hooks/register.js`, `lib/project.js`, `lib/view.js`) and is installed by the existing `datatug` plugin. Only the Claude Code manifest references it; the Codex, Gemini CLI, Copilot and Cursor manifests do not reference it, though all five advance together from plugin `0.0.2` to `0.0.3`.
 
 `/datatug` locates the nearest `datatug-project.json` by walking up from the working directory, loads the project into a plain object (`lib/project.js`, no Claude Code dependency), and draws it as a pane (`lib/view.js`) with four tabs:
 
@@ -78,11 +78,17 @@ The mod is read-only. It does not run queries, guard tool calls, or edit project
 
 **Given** the Codex, Gemini CLI, Copilot and Cursor manifests
 **When** the mod is added
-**Then** none of them reference `hooks/` and their skill paths are unchanged.
+**Then** none of them reference `hooks/` and their skill paths are unchanged; only their version changes, per `version-advance`.
+
+### AC: version-advance
+
+**Given** the plugin metadata files for Claude Code, Codex, GitHub Copilot, Gemini CLI and Cursor
+**When** this Feature ships
+**Then** every metadata version is DataTug plugin `0.0.3`, advanced from `0.0.2`.
 
 ## Open Questions
 
-- Should the plugin version advance (`0.0.2` to `0.0.3`) with this Feature, or ship in the next planned release?
+None at this time.
 
 ## Out of Scope
 
