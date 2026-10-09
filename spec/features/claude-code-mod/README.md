@@ -90,7 +90,7 @@ The mod is read-only. It does not run queries, guard tool calls, edit project fi
 
 **Given** a project where one of the three listing commands exits non-zero (for example a board that cannot be loaded) and the folder is a project
 **When** `/datatug` runs
-**Then** the tabs that command feeds show a warning row carrying the first line of its stderr, and the other tabs render normally.
+**Then** the tabs that command feeds show a warning row carrying the command's name and the error message it printed, and the other tabs render normally.
 
 ### AC: cli-only-data
 
