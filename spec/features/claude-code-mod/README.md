@@ -1,12 +1,12 @@
 ---
 format: https://specscore.md/feature-specification
-status: Draft
+status: Implementing
 ---
 
 # Feature: Claude Code Project Pane Mod
 
 > [SpecScore.**Studio**](https://specscore.studio): | [Explore](https://specscore.studio/app/github.com/datatug/ai-plugin/spec/features/claude-code-mod?op=explore) | [Edit](https://specscore.studio/app/github.com/datatug/ai-plugin/spec/features/claude-code-mod?op=edit) | [Ask question](https://specscore.studio/app/github.com/datatug/ai-plugin/spec/features/claude-code-mod?op=ask) | [Request change](https://specscore.studio/app/github.com/datatug/ai-plugin/spec/features/claude-code-mod?op=request-change) |
-**Status:** Draft
+**Status:** Implementing
 **Source Ideas:** —
 
 ## Summary
@@ -117,6 +117,23 @@ None at this time.
 ## Out of Scope
 
 Running saved queries, guarding database tool calls, a status band above the prompt, editing project files, entities, and finding a project in a parent folder. Each can become its own Feature.
+
+## Verification Status
+
+Verified on 2026-10-09 with Claude Code 2.1.295 on macOS (arm64):
+
+- `claude plugin test`: 47 tests pass across 5 files. `claude plugin validate . --strict` passes; its calls are `$.command.register`, `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.ui.invalidate`, `$.ui.open`, `$.ui.resolve`.
+- `claude -p "/datatug"` with the released `datatug` 0.67.0, in the root of the `chinook-demo` project: prints the text summary of the four sections (5 environments, 9 queries matching `datatug queries`, 1 board), and leaves the project unchanged.
+- The same in a folder that is not a project: the one-line "not a DataTug project" reply.
+- With `datatug` 0.51.0: the one-line "too old" reply naming 0.51.0, 0.67.0 and `datatug self-update`.
+- With no `datatug` on the `PATH`: the one-line reply naming `datatug:datatug-install`.
+- All five manifests are at `0.0.3`, and none but Claude Code's plugin layout references `hooks/`.
+
+Not exercised:
+
+- The pane drawn in an interactive terminal or the Desktop app. The tests check the tree the mod returns and its tab presses through the test kit, not how an app paints it.
+- A session that draws only on `vscode` or `mobile`: covered by tests with a stubbed surface list, not by a real client.
+- Gemini CLI, GitHub Copilot and Cursor loading a plugin that has a `hooks/hooks.json`. The file holds a `modules` key and no `hooks` key; their behaviour with it is unverified.
 
 ---
 *This document follows the https://specscore.md/feature-specification*
