@@ -11,7 +11,7 @@ import {
 } from '../lib/cli.js'
 import { summaryText } from '../lib/lines.js'
 import { buildProject } from '../lib/project.js'
-import { buildPane } from '../lib/view.js'
+import { buildPane, canDrawPane } from '../lib/view.js'
 
 const PANE = 'datatug-project'
 const TIMEOUT_MS = 15000
@@ -61,7 +61,11 @@ export function register(on) {
     project = buildProject({ show, queries, boards })
     tab = 'overview'
 
-    // Where nothing can draw, fall back to a plain-text summary.
+    // Where no surface shows panes (a `-p` run names none), reply with a
+    // plain-text summary: `$.ui.open` would report a pane placed that nothing draws.
+    const surfaces = await $.session.surfaces()
+    if (!canDrawPane(surfaces)) return { text: summaryText(project) }
+
     try {
       const opened = await $.ui.open({ id: PANE, title: 'DataTug', focus: true, closeOnEscape: true })
       if (opened.isPlaced) return {}

@@ -82,9 +82,9 @@ The mod is read-only. It does not run queries, guard tool calls, edit project fi
 
 ### AC: text-fallback
 
-**Given** a session where mods cannot draw
+**Given** a session that draws on no surface that shows panes (`$.session.surfaces()` names neither `terminal` nor `desktop`; a `claude -p` run names none)
 **When** `/datatug` runs
-**Then** it replies with a plain-text summary of the four sections.
+**Then** it replies with a plain-text summary of the four sections, and opens no pane.
 
 ### AC: failed-command-isolated
 
@@ -96,7 +96,7 @@ The mod is read-only. It does not run queries, guard tool calls, edit project fi
 
 **Given** the mod's source
 **When** `claude plugin validate` lists its `hooks:` and `calls:`
-**Then** the calls are limited to `$.process.run`, `$.session.cwd`, `$.command.register` and `$.ui.*`: no `fs.*`, `http.*` or `process.spawn` call; and every `$.process.run` argument list starts with `datatug` followed by one of the four commands above.
+**Then** the calls are limited to `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.command.register` and `$.ui.*`: no `fs.*`, `http.*` or `process.spawn` call; and every `$.process.run` argument list starts with `datatug` followed by one of the four commands above.
 
 ### AC: other-manifests-unchanged
 

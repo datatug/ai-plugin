@@ -37,6 +37,7 @@ test('/datatug runs the four read-only commands in the working directory and ope
   const opened: string[] = []
   const cwds: string[] = []
   on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   on('process.run', ($: any, e: any) => {
     cwds.push(e.init?.cwd)
     return cli.stub($, e)
@@ -120,6 +121,7 @@ test('a datatug that is too old gets one line with both versions and runs nothin
 test('a version that cannot be read (a development build) is let through', async ($, on) => {
   const cli = fakeCli({ [KEY.version]: { exitCode: 0, stdout: 'dev\n', stderr: '' } })
   on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   on('process.run', cli.stub)
   on('ui.open', () => ({ value: { isPlaced: true } }))
 
@@ -129,6 +131,7 @@ test('a version that cannot be read (a development build) is let through', async
 
 test('when the pane is not placed, /datatug replies with the text summary', async ($, on) => {
   on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   on('process.run', fakeCli().stub)
   on('ui.open', () => ({ value: { isPlaced: false, reason: 'no interface here' } }))
 
@@ -139,6 +142,7 @@ test('when the pane is not placed, /datatug replies with the text summary', asyn
 
 test('when opening a pane fails, /datatug replies with the text summary', async ($, on) => {
   on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   on('process.run', fakeCli().stub)
   on('ui.open', () => ({ deny: 'panes are not available' }))
 
@@ -151,6 +155,7 @@ test('a failed listing shows a warning on its tab and the other tabs still rende
     [KEY.boards]: { exitCode: 1, stdout: '', stderr: '\n   ERROR  \n\n  board "b1" cannot be loaded\n' },
   })
   on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   on('process.run', cli.stub)
   on('ui.open', () => ({ value: { isPlaced: true } }))
 
@@ -166,6 +171,7 @@ test('a failed listing shows a warning on its tab and the other tabs still rende
 test('a listing command that cannot be started is a warning, not a crash', async ($, on) => {
   const cli = fakeCli({ [KEY.queries]: new Error('timed out') })
   on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
   on('process.run', cli.stub)
   on('ui.open', () => ({ value: { isPlaced: true } }))
 
@@ -174,4 +180,48 @@ test('a listing command that cannot be started is a warning, not a crash', async
   await ui.press({ key: 'tab-queries' })
   expect(await ui.find({ type: 'Text', text: /^⚠ datatug queries: / })).toBeDefined()
   await ui.unmount()
+})
+
+test('where the session draws on no surface, /datatug replies with the text summary and opens no pane', async ($, on) => {
+  let opens = 0
+  on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: [] }))
+  on('process.run', fakeCli().stub)
+  on('ui.open', () => {
+    opens += 1
+    return { value: { isPlaced: true } }
+  })
+
+  const answer = await $.command.run({ command: 'datatug', args: '' })
+  expect(answer.text).toMatch(/^Overview\n {2}DataTug Demo Project 1/)
+  expect(opens).toBe(0)
+})
+
+test('where only the VS Code panel draws, /datatug replies with the text summary and opens no pane', async ($, on) => {
+  let opens = 0
+  on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['vscode'] }))
+  on('process.run', fakeCli().stub)
+  on('ui.open', () => {
+    opens += 1
+    return { value: { isPlaced: true } }
+  })
+
+  const answer = await $.command.run({ command: 'datatug', args: '' })
+  expect(answer.text).toMatch(/^Overview\n {2}DataTug Demo Project 1/)
+  expect(opens).toBe(0)
+})
+
+test('on the Desktop app the pane opens', async ($, on) => {
+  const opened: string[] = []
+  on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['desktop'] }))
+  on('process.run', fakeCli().stub)
+  on('ui.open', ($: any, e: any) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+
+  expect(await $.command.run({ command: 'datatug', args: '' })).toEqual({})
+  expect(opened).toEqual(['datatug-project'])
 })
