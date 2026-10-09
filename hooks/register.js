@@ -21,6 +21,8 @@ const TIMEOUT_MS = 15000
 let project = null
 let tab = 'overview'
 let selected = null // path of the chosen query, or null
+let focusPath = null // the query row that takes the focus after Back
+let isAsking = false // an Ask Claude press is running
 
 // Runs one read-only datatug command, with no shell. A command that cannot be
 // started, or runs past the timeout, resolves with isStarted false.
@@ -69,6 +71,7 @@ export function register(on) {
     project = buildProject({ show, queries, boards })
     tab = 'overview'
     selected = null
+    focusPath = null
     // An open pane is redrawn only when asked: re-opening its id just retitles it.
     $.ui.invalidate('ui.render')
 
@@ -96,10 +99,12 @@ export function register(on) {
       onTab: (id) => {
         tab = id
         selected = null
+        focusPath = null
         $.ui.invalidate('ui.render')
       },
       onSelect: (path) => {
         selected = path
+        focusPath = path
         $.ui.invalidate('ui.render')
       },
       onBack: () => {
@@ -107,24 +112,31 @@ export function register(on) {
         $.ui.invalidate('ui.render')
       },
       onAsk: async () => {
+        if (isAsking) return
         const query = selected === null || project === null ? null : findQuery(project, selected)
         if (query === null) return
         const draft = queryDraft(query)
-        let isFilled = false
+        if (draft === null) return
+        isAsking = true
         try {
-          const box = await $.prompt.read()
-          const filled = await $.prompt.fill({ text: appendPrefix(box.text) + draft, mode: 'append' })
-          isFilled = filled.isFilled === true
-        } catch {
-          // the draft is shown in a toast below
+          let isFilled = false
+          try {
+            const box = await $.prompt.read()
+            const filled = await $.prompt.fill({ text: appendPrefix(box.text) + draft, mode: 'append' })
+            isFilled = filled.isFilled === true
+            // No call hands the keys back and leaves the pane open, so close
+            // it. The draft is in the box by now: a close that fails is not
+            // a failed draft.
+            if (isFilled) await $.ui.close({ id: PANE })
+          } catch {
+            if (!isFilled) $.ui.toast(draft, { timeoutMs: 15000 })
+            return
+          }
+          if (!isFilled) $.ui.toast(draft, { timeoutMs: 15000 })
+        } finally {
+          isAsking = false
         }
-        if (!isFilled) {
-          $.ui.toast(draft)
-          return
-        }
-        // No call hands the keys back and leaves the pane open, so close it.
-        await $.ui.close({ id: PANE })
       },
-    })
+    }, focusPath)
   })
 }

@@ -39,7 +39,7 @@ test('buildProject turns query IDs into a folder tree', async () => {
   const { tree, count, warnings } = buildProject(results()).queries
   expect(count).toBe(3)
   expect(warnings).toEqual([])
-  expect(tree.queries).toEqual([{ id: 'top-level', path: 'top-level', title: null, type: null, parameters: [] }])
+  expect(tree.queries).toEqual([{ id: 'top-level', path: 'top-level', title: null, type: null, parameters: [], moreParameters: 0 }])
   expect(tree.children.map((c: { name: string }) => c.name)).toEqual(['customers', 'reference'])
   expect(tree.children[0].queries).toEqual([
     {
@@ -51,9 +51,10 @@ test('buildProject turns query IDs into a folder tree', async () => {
         { id: 'InvoiceId', type: 'integer', required: true },
         { id: 'From', type: null, required: false },
       ],
+      moreParameters: 0,
     },
   ])
-  expect(tree.children[1].queries).toEqual([{ id: 'country-facts', path: 'reference/country-facts', title: null, type: 'HTTP', parameters: [] }])
+  expect(tree.children[1].queries).toEqual([{ id: 'country-facts', path: 'reference/country-facts', title: null, type: 'HTTP', parameters: [], moreParameters: 0 }])
 })
 
 test('buildProject lists boards with their titles', async () => {
@@ -126,7 +127,7 @@ test('an entry whose id cleans to nothing is dropped and a title that cleans to 
   expect(model.environments.items).toEqual([])
   expect(model.queries.count).toBe(1)
   expect(model.queries.tree.children.map((c: { name: string }) => c.name)).toEqual(['a'])
-  expect(model.queries.tree.children[0].queries).toEqual([{ id: 'b', path: 'a/b', title: null, type: null, parameters: [] }])
+  expect(model.queries.tree.children[0].queries).toEqual([{ id: 'b', path: 'a/b', title: null, type: null, parameters: [], moreParameters: 0 }])
   expect(model.boards.items).toEqual([])
 })
 
@@ -157,4 +158,22 @@ test('a query keeps its cleaned parameters; entries without a usable id are drop
 test('a CLI that lists no parameters (or a non-list) leaves the query with none', async () => {
   const model = buildProject(results({ queries: okRun([{ id: 'a' }, { id: 'b', parameters: 'x' }]) }))
   expect(model.queries.tree.queries.map((q: { parameters: unknown }) => q.parameters)).toEqual([[], []])
+})
+
+test('a query keeps at most 50 parameters and counts the rest', async () => {
+  const parameters = Array.from({ length: 5000 }, (_, i) => ({ id: 'P' + i }))
+  const model = buildProject(results({ queries: okRun([{ id: 'q', parameters }]) }))
+  const query = model.queries.tree.queries[0]
+  expect(query.parameters.length).toBe(50)
+  expect(query.parameters[49].id).toBe('P49')
+  expect(query.moreParameters).toBe(4950)
+})
+
+test('queries whose cleaned paths collide keep the first only', async () => {
+  const model = buildProject(
+    results({ queries: okRun([{ id: 'a\u0000b', title: 'first' }, { id: 'a b' }, { id: 'a\tb' }]) }),
+  )
+  expect(model.queries.count).toBe(1)
+  expect(model.queries.tree.queries.length).toBe(1)
+  expect(model.queries.tree.queries[0].title).toBe('first')
 })

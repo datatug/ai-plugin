@@ -53,7 +53,7 @@ Running `/datatug` again reloads the project and redraws an open pane. Text that
 
 On the Queries tab each query is a row that can be chosen with the keyboard. Choosing one opens that query's detail view in the pane: its title, its ID, its type and its parameters (each with its type, and marked when required), over a row of actions. **Ask Claude** puts a request to run the query into the prompt box as a draft and does not submit it, so the person can add details before sending. **Back** returns to the list. The action row is where running a query inside the pane will be added; this Feature does not run queries.
 
-The draft is one line: `Run the saved DataTug query <id> ("<title>")`, followed by ` with <P>=` for each required parameter joined by `, `, and ` (optional: <P>, <P>)` when there are optional ones. It is appended to whatever the box already holds, after a space when that text does not end in one. When the box cannot take it (a dialog holds the keys, or the session has no box), the draft is shown in a toast instead. After the box takes it, the keys go back to the prompt box.
+The draft is one line: `Run the saved DataTug query <id>`, followed by ` with <P>=` for each required parameter joined by `, `, and ` (optional: <P>, <P>)` when there are optional ones. It carries no title and no other text from the project: only the query's ID and parameter names, and only plain names (letters, digits, `_`, `.` and `-`, up to 64 characters, not starting with `.` or `-`). A parameter whose id is not plain is shown in the detail view and left out of the draft. A query whose ID is not made of plain names (at most 16 segments, 200 characters in all) cannot be drafted: its detail view says so in place of the Ask Claude button, and Back stays. The draft names at most 10 required and 10 optional parameters and counts the rest (` (+N more required)`, `, +N more`), and is at most 500 characters. The detail view shows at most 20 parameters and then a count of the rest, below the actions, so the actions are always on screen. Queries beyond the 200-row cap cannot be chosen. It is appended to whatever the box already holds, after a space when that text does not end in one. When the box cannot take it (a dialog holds the keys, or the session has no box), the draft is shown in a toast instead. After the box takes it, the pane closes, which gives the keys back to the prompt box; `/datatug` opens it again.
 
 Parameters are those `datatug queries --format json` lists; with a `datatug` that lists none, the detail view and the draft carry none.
 
@@ -124,7 +124,13 @@ Parameters are those `datatug queries --format json` lists; with a `datatug` tha
 
 **Given** the detail view of a query
 **When** the person presses Ask Claude
-**Then** `$.prompt.fill` is called once in `append` mode with the one-line draft naming the query's ID, title and parameters, no prompt is submitted, and the keys go back to the prompt box.
+**Then** `$.prompt.fill` is called once in `append` mode with the one-line draft naming the query's ID and its plain-named parameters, no prompt is submitted, and the pane is closed, which returns the keys to the prompt box.
+
+### AC: draft-carries-no-project-prose
+
+**Given** a query whose title or a parameter id holds a sentence or quote characters
+**When** Ask Claude is pressed
+**Then** the draft holds the query's ID and plain parameter names only, and no text from the title.
 
 ### AC: draft-keeps-what-was-typed
 
@@ -168,7 +174,7 @@ Running saved queries, guarding database tool calls, a status band above the pro
 
 Verified on 2026-10-09 with Claude Code 2.1.295 on macOS (arm64):
 
-- `claude plugin test`: 89 tests pass across 7 files. `claude plugin validate . --strict` passes; its calls are `$.command.register`, `$.process.run`, `$.prompt.fill`, `$.prompt.read`, `$.session.cwd`, `$.session.surfaces`, `$.ui.close`, `$.ui.invalidate`, `$.ui.open`, `$.ui.resolve`, `$.ui.toast`.
+- `claude plugin test`: 114 tests pass across 7 files. `claude plugin validate . --strict` passes; its calls are `$.command.register`, `$.process.run`, `$.prompt.fill`, `$.prompt.read`, `$.session.cwd`, `$.session.surfaces`, `$.ui.close`, `$.ui.invalidate`, `$.ui.open`, `$.ui.resolve`, `$.ui.toast`.
 - `claude -p "/datatug"` with the released `datatug` 0.67.0, in the root of the `chinook-demo` project: prints the text summary of the four sections (5 environments, 9 queries matching `datatug queries`, 1 board), and leaves the project unchanged.
 - The same in a folder that is not a project: the one-line "not a DataTug project" reply.
 - With `datatug` 0.51.0: the one-line "too old" reply naming 0.51.0, 0.67.0 and `datatug self-update`.
@@ -180,7 +186,7 @@ Not exercised:
 - The pane drawn in an interactive terminal or the Desktop app. The tests check the tree the mod returns and its tab presses through the test kit, not how an app paints it.
 - A session that draws only on `vscode` or `mobile`: covered by tests with a stubbed surface list, not by a real client.
 - Other hosts: GitHub Copilot CLI 1.0.90 loads the plugin at 0.0.3 with its nine skills and logs one error line that the root `hooks/hooks.json` is not read; Codex 0.156.0 installs the plugin and showed no hook-related message, without a positive sign that it parsed the file; Gemini CLI and Cursor were not installed and are unverified. Both are documented to discover `hooks/hooks.json`.
-- Choosing a query and Ask Claude in a live terminal: checked through the test kit only, including whether the keys return to the prompt box.
+- Choosing a query and Ask Claude in a live terminal, checked through the test kit only: whether a focused pane lets the fill through or the engine treats it as a dialog; whether the cursor is in the prompt box after the draft once the pane closes; Tab and Enter across many query rows and whether the pane scrolls to follow the focus; whether hotkeys `1`–`4`, `a` and `b` fire in every focus state.
 - How an interactive transcript treats the text reply, and re-running `/datatug` against a pane in a live terminal (checked through the test kit only).
 
 ---
