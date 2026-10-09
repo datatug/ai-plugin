@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "datatug",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "DataTug CLI skills for data exploration, dataset management, schema scanning, and query execution.",
   "author": {
     "name": "DataTug",

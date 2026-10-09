@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { MAX_ROWS, SECTIONS, sectionLines, summaryText } from '../lib/lines.js'
+import { MAX_LABEL, MAX_ROWS, SECTIONS, queryHeadLines, queryParamLines, sectionLines, summaryText } from '../lib/lines.js'
 import { buildProject } from '../lib/project.js'
 import { BOARDS, QUERIES, SHOW, okRun } from './fixtures'
 
@@ -119,4 +119,39 @@ test('a section shows at most MAX_ROWS rows, says how many it left out, and keep
 
   const exact = texts(project({ boards: okRun(many.slice(0, 200)) }), 'boards')
   expect(exact.length).toBe(200)
+})
+
+test('query rows carry the path of their query; folder and warning rows carry none', async () => {
+  const rows = sectionLines(project(), 'queries') as { text: string; path?: string }[]
+  expect(rows.filter((r) => r.path).map((r) => r.path)).toEqual([
+    'top-level',
+    'customers/customer-invoices',
+    'reference/country-facts',
+  ])
+  expect(rows.find((r) => r.text === 'customers/')?.path).toBeUndefined()
+})
+
+test('a query row label is at most 120 characters, ending in an ellipsis when cut', async () => {
+  const p = project({ queries: okRun([{ id: 'q', title: 'T'.repeat(200), type: 'SQL' }]) })
+  const row = sectionLines(p, 'queries')[0]
+  expect(Array.from(row.text).length).toBe(MAX_LABEL)
+  expect(row.text.endsWith('…')).toBe(true)
+})
+
+test('the head of the detail view is the title, the id and the type', async () => {
+  const q = project().queries.tree.children[0].queries[0]
+  expect(queryHeadLines(q).map((l: { text: string }) => l.text)).toEqual([
+    'Customer invoices',
+    'id: customers/customer-invoices',
+    'type: SQL',
+  ])
+})
+
+test('the detail view shows at most 20 parameters and counts the rest, dropped ones included', async () => {
+  const parameters = Array.from({ length: 5000 }, (_, i) => ({ id: 'P' + i }))
+  const q = project({ queries: okRun([{ id: 'q', parameters }]) }).queries.tree.queries[0]
+  const rows = queryParamLines(q)
+  expect(rows.length).toBe(1 + 20 + 1)
+  expect(rows.at(-1)).toEqual({ text: '… 4980 more', tone: 'dim' })
+  expect(queryParamLines({ parameters: [{ id: 'a', type: null, required: false }], moreParameters: 0 }).length).toBe(2)
 })

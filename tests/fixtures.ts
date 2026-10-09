@@ -23,7 +23,12 @@ export const SHOW = {
 }
 
 export const QUERIES = [
-  { id: 'customers/customer-invoices', title: 'Customer invoices', type: 'SQL' },
+  {
+    id: 'customers/customer-invoices',
+    title: 'Customer invoices',
+    type: 'SQL',
+    parameters: [{ id: 'InvoiceId', type: 'integer', required: true }, { id: 'From' }],
+  },
   { id: 'reference/country-facts', type: 'HTTP' },
   { id: 'top-level' },
 ]

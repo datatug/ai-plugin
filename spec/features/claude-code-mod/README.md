@@ -21,7 +21,7 @@ Reading the project's files directly would make the mod a second reader of the p
 
 ## Behavior
 
-The mod lives in this repository next to the skills (`hooks/hooks.json`, `hooks/register.js`, and pure helpers under `lib/`) and is installed by the existing `datatug` plugin. Only Claude Code loads it; the Codex, Gemini CLI, Copilot and Cursor manifests do not reference it, though all five advance together from plugin `0.0.2` to `0.0.3`.
+The mod lives in this repository next to the skills (`hooks/hooks.json`, `hooks/register.js`, and pure helpers under `lib/`) and is installed by the existing `datatug` plugin. Only Claude Code loads it; the Codex, Gemini CLI, Copilot and Cursor manifests do not reference it, though all five advance together.
 
 `/datatug` runs the `datatug` CLI in the session's working directory and draws the result as a pane with four tabs:
 
@@ -45,9 +45,17 @@ These are specified in `datatug/datatug-cli` (`spec/features/cli/show`, `spec/fe
 
 The CLI resolves a project at the root of the working directory only, so `/datatug` shows a project when the session runs in the project's root folder. It does not search parent folders.
 
-The mod is read-only. It does not run queries, guard tool calls, edit project files, or read them.
+The mod is read-only towards the project. It does not run queries, guard tool calls, edit project files, or read them, and it never submits a prompt.
 
 Running `/datatug` again reloads the project and redraws an open pane. Text that comes from the project or from the CLI (titles, ids, types, drivers, error messages) is shown with control characters, bidirectional controls and line breaks replaced by spaces and long values cut short, so a project file cannot blank the pane, act on the terminal or forge a line of the reply. Each tab shows at most 200 rows and says how many more there are. The mod runs the `datatug` found first on the `PATH`.
+
+### Picking a query
+
+On the Queries tab each query is a row that can be chosen with the keyboard. Choosing one opens that query's detail view in the pane: its title, its ID, its type and its parameters (each with its type, and marked when required), over a row of actions. **Ask Claude** puts a request to run the query into the prompt box as a draft and does not submit it, so the person can add details before sending. **Back** returns to the list. The action row is where running a query inside the pane will be added; this Feature does not run queries.
+
+The draft is one line: `Run the saved DataTug query <id>`, followed by ` with <P>=` for each required parameter joined by `, `, and ` (optional: <P>, <P>)` when there are optional ones. It carries no title and no other text from the project: only the query's ID and parameter names, and only plain names (letters, digits, `_`, `.` and `-`, up to 64 characters, not starting with `.` or `-`). A parameter whose id is not plain is shown in the detail view and left out of the draft. A query whose ID is not made of plain names (at most 16 segments, 200 characters in all) cannot be drafted: its detail view says so in place of the Ask Claude button, and Back stays. The draft names at most 10 required and 10 optional parameters and counts the rest (` (+N more required)`, `, +N more`), and is at most 500 characters. The detail view shows at most 20 parameters and then a count of the rest, below the actions, so the actions are always on screen. Queries beyond the 200-row cap cannot be chosen. It is appended to whatever the box already holds, after a space when that text does not end in one. When the box cannot take it (a dialog holds the keys, or the session has no box), the draft is shown in a toast instead. After the box takes it, the pane closes, which gives the keys back to the prompt box; `/datatug` opens it again.
+
+Parameters are those `datatug queries --format json` lists; with a `datatug` that lists none, the detail view and the draft carry none.
 
 ### Journey
 
@@ -106,11 +114,41 @@ Running `/datatug` again reloads the project and redraws an open pane. Text that
 **When** `/datatug` runs
 **Then** the pane is drawn and the text summary is printed with those characters replaced by spaces, and no line of the reply begins with text taken from after a line break in a title.
 
+### AC: query-detail
+
+**Given** a pane on the Queries tab for a project with a query that has a required and an optional parameter
+**When** the person chooses that query
+**Then** the pane shows the query's title, ID, type and both parameters with the required one marked, and the actions Ask Claude and Back; Back shows the list again.
+
+### AC: ask-claude-drafts-without-submitting
+
+**Given** the detail view of a query
+**When** the person presses Ask Claude
+**Then** `$.prompt.fill` is called once in `append` mode with the one-line draft naming the query's ID and its plain-named parameters, no prompt is submitted, and the pane is closed, which returns the keys to the prompt box.
+
+### AC: draft-carries-no-project-prose
+
+**Given** a query whose title or a parameter id holds a sentence or quote characters
+**When** Ask Claude is pressed
+**Then** the draft holds the query's ID and plain parameter names only, and no text from the title.
+
+### AC: draft-keeps-what-was-typed
+
+**Given** a prompt box that already holds text not ending in a space
+**When** the person presses Ask Claude
+**Then** the appended text starts with a space, and the text already there is unchanged.
+
+### AC: draft-falls-back-to-a-toast
+
+**Given** a prompt box that cannot take text (`isFilled` is false)
+**When** the person presses Ask Claude
+**Then** the draft is shown in a toast and the pane stays open.
+
 ### AC: cli-only-data
 
 **Given** the mod's source
 **When** `claude plugin validate` lists its `hooks:` and `calls:`
-**Then** the calls are limited to `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.command.register` and `$.ui.*`: no `fs.*`, `http.*` or `process.spawn` call; and every `$.process.run` argument list starts with `datatug` followed by one of the four commands above. The argument lists are checked by the mod's tests (`tests/mod.test.ts`), since `claude plugin validate` lists call names only.
+**Then** the calls are limited to `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.command.register`, `$.prompt.read`, `$.prompt.fill` and `$.ui.*`: no `fs.*`, `http.*` or `process.spawn` call; and every `$.process.run` argument list starts with `datatug` followed by one of the four commands above. The argument lists are checked by the mod's tests (`tests/mod.test.ts`), since `claude plugin validate` lists call names only.
 
 ### AC: other-manifests-unchanged
 
@@ -122,7 +160,7 @@ Running `/datatug` again reloads the project and redraws an open pane. Text that
 
 **Given** the plugin metadata files for Claude Code, Codex, GitHub Copilot, Gemini CLI and Cursor
 **When** this Feature ships
-**Then** every metadata version is DataTug plugin `0.0.3`, advanced from `0.0.2`.
+**Then** every metadata version is one shared DataTug plugin version (`0.0.4` with query picking).
 
 ## Open Questions
 
@@ -136,18 +174,19 @@ Running saved queries, guarding database tool calls, a status band above the pro
 
 Verified on 2026-10-09 with Claude Code 2.1.295 on macOS (arm64):
 
-- `claude plugin test`: 67 tests pass across 6 files. `claude plugin validate . --strict` passes; its calls are `$.command.register`, `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.ui.invalidate`, `$.ui.open`, `$.ui.resolve`.
+- `claude plugin test`: 114 tests pass across 7 files. `claude plugin validate . --strict` passes; its calls are `$.command.register`, `$.process.run`, `$.prompt.fill`, `$.prompt.read`, `$.session.cwd`, `$.session.surfaces`, `$.ui.close`, `$.ui.invalidate`, `$.ui.open`, `$.ui.resolve`, `$.ui.toast`.
 - `claude -p "/datatug"` with the released `datatug` 0.67.0, in the root of the `chinook-demo` project: prints the text summary of the four sections (5 environments, 9 queries matching `datatug queries`, 1 board), and leaves the project unchanged.
 - The same in a folder that is not a project: the one-line "not a DataTug project" reply.
 - With `datatug` 0.51.0: the one-line "too old" reply naming 0.51.0, 0.67.0 and `datatug self-update`.
 - With no `datatug` on the `PATH`: the one-line reply naming `datatug:datatug-install`.
-- All five manifests are at `0.0.3`, and none but Claude Code's plugin layout references `hooks/`.
+- All five manifests are at `0.0.4`, and none but Claude Code's plugin layout references `hooks/`.
 
 Not exercised:
 
 - The pane drawn in an interactive terminal or the Desktop app. The tests check the tree the mod returns and its tab presses through the test kit, not how an app paints it.
 - A session that draws only on `vscode` or `mobile`: covered by tests with a stubbed surface list, not by a real client.
 - Other hosts: GitHub Copilot CLI 1.0.90 loads the plugin at 0.0.3 with its nine skills and logs one error line that the root `hooks/hooks.json` is not read; Codex 0.156.0 installs the plugin and showed no hook-related message, without a positive sign that it parsed the file; Gemini CLI and Cursor were not installed and are unverified. Both are documented to discover `hooks/hooks.json`.
+- Choosing a query and Ask Claude in a live terminal, checked through the test kit only: whether a focused pane lets the fill through or the engine treats it as a dialog; whether the cursor is in the prompt box after the draft once the pane closes; Tab and Enter across many query rows and whether the pane scrolls to follow the focus; whether hotkeys `1`–`4`, `a` and `b` fire in every focus state.
 - How an interactive transcript treats the text reply, and re-running `/datatug` against a pane in a live terminal (checked through the test kit only).
 
 ---

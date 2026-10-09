@@ -21,6 +21,8 @@ This repository contains the plugin source. It is installed on top of the [`data
 
 In Claude Code, the plugin also ships a [mod](https://code.claude.com/docs/en/plugins/mods/overview): run `/datatug` in a DataTug project's root folder to open a read-only pane with four tabs (Overview, Environments, Queries, Boards). Everything it shows comes from the `datatug` CLI (`datatug show`, `datatug queries` and `datatug board list`, each with `--format json`); the mod reads no project file itself. Where nothing can draw (VS Code chat, `claude -p`), it prints a text summary instead.
 
+On the Queries tab, Tab moves between queries and Enter opens one (title, ID, type and parameters). Press `a` there to draft a request in the prompt box without sending it, so you can add details first; this closes the pane, and `/datatug` opens it again. `b` goes back to the list.
+
 The mod runs the `datatug` found first on your `PATH`, in the session's working directory, as the plugin's skills do.
 
 It requires Claude Code 2.1.287 or later and `datatug` 0.67.0 or later; other hosts do not run the mod (GitHub Copilot CLI logs one error line about the root `hooks/hooks.json` when it loads the plugin, and still loads its skills). If the CLI is missing or older, `/datatug` says so and names the fix.

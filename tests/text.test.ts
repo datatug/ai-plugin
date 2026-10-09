@@ -43,3 +43,24 @@ test('anything that is not a string gives an empty string', async () => {
 test('ordinary text, non-ASCII letters and the dash and dot characters are unchanged', async () => {
   expect(cleanText('Café 日本 — a · b')).toBe('Café 日本 — a · b')
 })
+
+test('invisible and zero-width characters become a space', async () => {
+  const marks = ['­', '؜', '᠎', '​', '‌', '‍', '⁠', '⁡', '⁢', '⁣', '⁤', '﻿']
+  for (const mark of marks) expect(cleanText('a' + mark + 'b')).toBe('a b')
+})
+
+test('the tag block becomes a space, at both ends', async () => {
+  for (const code of [0xe0000, 0xe0001, 0xe0020, 0xe007f]) {
+    expect(cleanText('a' + String.fromCodePoint(code) + 'b')).toBe('a b')
+  }
+  expect(cleanText('a' + String.fromCodePoint(0xe0080) + 'b')).toBe('a' + String.fromCodePoint(0xe0080) + 'b')
+})
+
+test('a cut never splits a surrogate pair', async () => {
+  const smile = String.fromCodePoint(0x1f600)
+  const text = cleanText(smile.repeat(300))
+  expect(Array.from(text).length).toBe(200)
+  expect(text.endsWith('…')).toBe(true)
+  expect(/[\ud800-\udbff](?![\udc00-\udfff])/.test(text)).toBe(false)
+  expect(cleanText(smile.repeat(200))).toBe(smile.repeat(200))
+})
