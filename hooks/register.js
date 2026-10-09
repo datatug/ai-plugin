@@ -25,7 +25,13 @@ let tab = 'overview'
 async function runDatatug($, args, cwd) {
   try {
     const result = await $.process.run(['datatug', ...args], { cwd, timeoutMs: TIMEOUT_MS })
-    return { isStarted: true, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
+    return {
+      isStarted: true,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      isStdoutTruncated: result.isStdoutTruncated === true,
+    }
   } catch (err) {
     return { isStarted: false, exitCode: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) }
   }
@@ -60,6 +66,8 @@ export function register(on) {
 
     project = buildProject({ show, queries, boards })
     tab = 'overview'
+    // An open pane is redrawn only when asked: re-opening its id just retitles it.
+    $.ui.invalidate('ui.render')
 
     // Where no surface shows panes (a `-p` run names none), reply with a
     // plain-text summary: `$.ui.open` would report a pane placed that nothing draws.
@@ -76,8 +84,11 @@ export function register(on) {
   })
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
-    if (e.requestId !== PANE || project === null) return next(e)
+    if (e.requestId !== PANE) return next(e)
     const elements = $.ui.resolve(e)
+    if (project === null) {
+      return elements.Text({ dimColor: true, children: ['Run /datatug to load the project.'] })
+    }
     return buildPane(elements, project, tab, (id) => {
       tab = id
       $.ui.invalidate('ui.render')

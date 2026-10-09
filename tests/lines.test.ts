@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { SECTIONS, sectionLines, summaryText } from '../lib/lines.js'
+import { MAX_ROWS, SECTIONS, sectionLines, summaryText } from '../lib/lines.js'
 import { buildProject } from '../lib/project.js'
 import { BOARDS, QUERIES, SHOW, okRun } from './fixtures'
 
@@ -60,7 +60,7 @@ test('a failed show says the project details are unavailable', async () => {
   const p = project({ show: { exitCode: 1, stdout: '', stderr: 'boom' } })
   expect(texts(p, 'overview')).toEqual([
     '(project details unavailable)',
-    '0 environments · 3 queries · 2 boards',
+    '? environments · 3 queries · 2 boards',
     '⚠ datatug show: boom',
   ])
   expect(texts(p, 'environments')).toEqual(['No environments.', '⚠ datatug show: boom'])
@@ -90,4 +90,33 @@ test('summaryText prints every section under its label', async () => {
   expect(text).toContain('\n\nEnvironments\n  dev')
   expect(text).toContain('\n\nQueries\n  top-level')
   expect(text).toContain('\n\nBoards\n  board1 — 1st board')
+})
+
+test('a failed boards listing shows ? in place of the board count', async () => {
+  const p = project({ boards: { exitCode: 1, stdout: '', stderr: 'boom' } })
+  expect(texts(p, 'overview').at(-1)).toBe('2 environments · 3 queries · ? boards')
+})
+
+test('a failed queries listing shows ? in place of the query count', async () => {
+  const p = project({ queries: { exitCode: 1, stdout: '', stderr: 'boom' } })
+  expect(texts(p, 'overview').at(-1)).toBe('2 environments · ? queries · 2 boards')
+})
+
+test('a section shows at most MAX_ROWS rows, says how many it left out, and keeps its warnings', async () => {
+  expect(MAX_ROWS).toBe(200)
+  const many = Array.from({ length: 250 }, (_, i) => ({ id: 'board' + i }))
+  const p = project({ boards: okRun(many) })
+  const rows = texts(p, 'boards')
+  expect(rows.length).toBe(201)
+  expect(rows[199]).toBe('board199')
+  expect(rows[200]).toBe('… 50 more')
+  expect(sectionLines(p, 'boards')[200].tone).toBe('dim')
+
+  const queries = Array.from({ length: 6000 }, (_, i) => ({ id: 'f' + (i % 10) + '/q' + i }))
+  const q = texts(project({ queries: okRun(queries) }), 'queries')
+  expect(q.length).toBe(201)
+  expect(q[200]).toMatch(/^… \d+ more$/)
+
+  const exact = texts(project({ boards: okRun(many.slice(0, 200)) }), 'boards')
+  expect(exact.length).toBe(200)
 })

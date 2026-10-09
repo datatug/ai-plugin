@@ -90,3 +90,17 @@ test('the one-line replies name the problem and the remedy', async () => {
   expect(notAProjectText('/work/x')).toContain('not a DataTug project')
   expect(notAProjectText('/work/x').includes('\n')).toBe(false)
 })
+
+test('readListing says so when a command printed more than the size limit', async () => {
+  const read = readListing('queries', { exitCode: 0, stdout: '[{"id":"a"', stderr: '', isStdoutTruncated: true })
+  expect(read).toEqual({ data: null, warning: 'datatug queries: its output is too large to read' })
+})
+
+test('errorMessage removes control characters, ESC sequences and line breaks', async () => {
+  const text = errorMessage('ERROR\n\u001b[2Jbad\u0007 thing\r\nnext\u202e', 1)
+  expect(text).toBe('[2Jbad thing next')
+})
+
+test('missingCliText covers a CLI that is missing and one that did not answer in time', async () => {
+  expect(missingCliText()).toContain('did not answer in 15 seconds')
+})

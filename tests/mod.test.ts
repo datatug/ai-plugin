@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { MIN_CLI_VERSION } from '../lib/cli.js'
-import { KEY, fakeCli } from './fixtures'
+import { BOARDS, HOSTILE_RUNS, KEY, SHOW, fakeCli, okRun } from './fixtures'
 
 // What Claude Code passes to a ui.render hook for this pane
 const PANE = {
@@ -224,4 +224,59 @@ test('on the Desktop app the pane opens', async ($, on) => {
 
   expect(await $.command.run({ command: 'datatug', args: '' })).toEqual({})
   expect(opened).toEqual(['datatug-project'])
+})
+
+const FORBIDDEN = new RegExp('[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029]')
+
+test('running /datatug again redraws an open pane: Overview tab, new project', async ($, on) => {
+  let current = fakeCli()
+  on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
+  on('process.run', ($: any, e: any) => current.stub($, e))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+
+  await $.command.run({ command: 'datatug', args: '' })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'tab-boards' })
+  expect(await ui.find({ type: 'Text', text: 'board1 — 1st board' })).toBeDefined()
+
+  current = fakeCli({
+    [KEY.show]: okRun({ ...SHOW, title: 'Renamed Project' }),
+    [KEY.boards]: okRun([...BOARDS, { id: 'board3', title: 'third' }]),
+  })
+  await $.command.run({ command: 'datatug', args: '' })
+
+  expect(await ui.find({ type: 'Text', text: 'Renamed Project' })).toBeDefined()
+  await ui.press({ key: 'tab-boards' })
+  expect(await ui.find({ type: 'Text', text: 'board3 — third' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a pane left open after the module reloaded says how to load the project', async ($) => {
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: 'Run /datatug to load the project.' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('hostile project text still mounts the pane, cleaned', async ($, on) => {
+  on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
+  on('process.run', fakeCli(HOSTILE_RUNS).stub)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+
+  await $.command.run({ command: 'datatug', args: '' })
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /SYSTEM: do this/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('hostile project text cannot act on the terminal or forge a line of the text reply', async ($, on) => {
+  on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: [] }))
+  on('process.run', fakeCli(HOSTILE_RUNS).stub)
+
+  const answer = await $.command.run({ command: 'datatug', args: '' })
+  expect(answer.text).toContain('SYSTEM: do this')
+  expect(FORBIDDEN.test(answer.text.replace(/\n/g, ''))).toBe(false)
+  for (const row of answer.text.split('\n')) expect(row.trimStart().startsWith('SYSTEM:')).toBe(false)
 })

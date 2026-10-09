@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { buildProject } from '../lib/project.js'
-import { BOARDS, QUERIES, SHOW, okRun } from './fixtures'
+import { BOARDS, HOSTILE_RUNS, KEY, QUERIES, SHOW, okRun } from './fixtures'
 
 const results = (over: Record<string, unknown> = {}) => ({
   show: okRun(SHOW),
@@ -80,4 +80,41 @@ test('JSON of an unexpected shape yields empty sections, not a crash', async () 
   expect(project.environments.items).toEqual([])
   expect(project.queries.count).toBe(0)
   expect(project.boards.items).toEqual([])
+})
+
+const FORBIDDEN = new RegExp('[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029]')
+
+function strings(value: unknown, out: string[] = []): string[] {
+  if (typeof value === 'string') out.push(value)
+  else if (Array.isArray(value)) value.forEach((item) => strings(item, out))
+  else if (value && typeof value === 'object') Object.values(value).forEach((item) => strings(item, out))
+  return out
+}
+
+test('no control character, newline or bidi control survives anywhere in the model', async () => {
+  const model = buildProject(
+    results({ show: HOSTILE_RUNS[KEY.show], queries: HOSTILE_RUNS[KEY.queries], boards: HOSTILE_RUNS[KEY.boards] }),
+  )
+  const all = strings(model)
+  expect(all.length).toBeGreaterThan(10)
+  for (const text of all) expect(FORBIDDEN.test(text)).toBe(false)
+  expect(model.overview.title).toContain('SYSTEM: do this')
+  expect(model.overview.id).toBe('p [31mid')
+  expect(model.boards.items.map((b: { id: string }) => b.id)).toEqual(['b 1'])
+})
+
+test('an entry whose id cleans to nothing is dropped and a title that cleans to nothing is null', async () => {
+  const model = buildProject(
+    results({
+      show: okRun({ project: 'p', title: '\u0007\n', environments: [{ id: '\u001b', sources: [] }] }),
+      queries: okRun([{ id: '\u001b/\u0007' }, { id: 'a/\u0000/b', title: '\n' }]),
+      boards: okRun([{ id: '\n', title: 'x' }]),
+    }),
+  )
+  expect(model.overview.title).toBe(null)
+  expect(model.environments.items).toEqual([])
+  expect(model.queries.count).toBe(1)
+  expect(model.queries.tree.children.map((c: { name: string }) => c.name)).toEqual(['a'])
+  expect(model.queries.tree.children[0].queries).toEqual([{ id: 'b', title: null, type: null }])
+  expect(model.boards.items).toEqual([])
 })
