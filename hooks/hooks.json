@@ -1,0 +1,4 @@
+{
+  "description": "The DataTug project pane mod",
+  "modules": ["./register.js"]
+}

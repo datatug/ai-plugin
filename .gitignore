@@ -1,1 +1,5 @@
 specscore.local.yaml
+
+# Claude Code writes these when it loads the mod from a directory
+/tsconfig.json
+.claude-plugin/types/

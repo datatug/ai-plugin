@@ -72,7 +72,7 @@ the renamed canonical directory.
 Plugins metadata files
 **When** each is parsed
 **Then** every declared skill path resolves to the one canonical `skills/`
-tree and every metadata version is DataTug plugin `0.0.2`; this verifies
+tree and every metadata version is one shared DataTug plugin version; this verifies
 package metadata, not unexercised host-runtime discovery.
 
 ### AC: missing-cli-fallback
