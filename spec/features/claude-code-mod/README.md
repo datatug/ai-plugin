@@ -45,9 +45,17 @@ These are specified in `datatug/datatug-cli` (`spec/features/cli/show`, `spec/fe
 
 The CLI resolves a project at the root of the working directory only, so `/datatug` shows a project when the session runs in the project's root folder. It does not search parent folders.
 
-The mod is read-only. It does not run queries, guard tool calls, edit project files, or read them.
+The mod is read-only towards the project. It does not run queries, guard tool calls, edit project files, or read them, and it never submits a prompt.
 
 Running `/datatug` again reloads the project and redraws an open pane. Text that comes from the project or from the CLI (titles, ids, types, drivers, error messages) is shown with control characters, bidirectional controls and line breaks replaced by spaces and long values cut short, so a project file cannot blank the pane, act on the terminal or forge a line of the reply. Each tab shows at most 200 rows and says how many more there are. The mod runs the `datatug` found first on the `PATH`.
+
+### Picking a query
+
+On the Queries tab each query is a row that can be chosen with the keyboard. Choosing one opens that query's detail view in the pane: its title, its ID, its type and its parameters (each with its type, and marked when required), over a row of actions. **Ask Claude** puts a request to run the query into the prompt box as a draft and does not submit it, so the person can add details before sending. **Back** returns to the list. The action row is where running a query inside the pane will be added; this Feature does not run queries.
+
+The draft is one line: `Run the saved DataTug query <id> ("<title>")`, followed by ` with <P>=` for each required parameter joined by `, `, and ` (optional: <P>, <P>)` when there are optional ones. It is appended to whatever the box already holds, after a space when that text does not end in one. When the box cannot take it (a dialog holds the keys, or the session has no box), the draft is shown in a toast instead. After the box takes it, the keys go back to the prompt box.
+
+Parameters are those `datatug queries --format json` lists; with a `datatug` that lists none, the detail view and the draft carry none.
 
 ### Journey
 
@@ -106,11 +114,35 @@ Running `/datatug` again reloads the project and redraws an open pane. Text that
 **When** `/datatug` runs
 **Then** the pane is drawn and the text summary is printed with those characters replaced by spaces, and no line of the reply begins with text taken from after a line break in a title.
 
+### AC: query-detail
+
+**Given** a pane on the Queries tab for a project with a query that has a required and an optional parameter
+**When** the person chooses that query
+**Then** the pane shows the query's title, ID, type and both parameters with the required one marked, and the actions Ask Claude and Back; Back shows the list again.
+
+### AC: ask-claude-drafts-without-submitting
+
+**Given** the detail view of a query
+**When** the person presses Ask Claude
+**Then** `$.prompt.fill` is called once in `append` mode with the one-line draft naming the query's ID, title and parameters, no prompt is submitted, and the keys go back to the prompt box.
+
+### AC: draft-keeps-what-was-typed
+
+**Given** a prompt box that already holds text not ending in a space
+**When** the person presses Ask Claude
+**Then** the appended text starts with a space, and the text already there is unchanged.
+
+### AC: draft-falls-back-to-a-toast
+
+**Given** a prompt box that cannot take text (`isFilled` is false)
+**When** the person presses Ask Claude
+**Then** the draft is shown in a toast and the pane stays open.
+
 ### AC: cli-only-data
 
 **Given** the mod's source
 **When** `claude plugin validate` lists its `hooks:` and `calls:`
-**Then** the calls are limited to `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.command.register` and `$.ui.*`: no `fs.*`, `http.*` or `process.spawn` call; and every `$.process.run` argument list starts with `datatug` followed by one of the four commands above. The argument lists are checked by the mod's tests (`tests/mod.test.ts`), since `claude plugin validate` lists call names only.
+**Then** the calls are limited to `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.command.register`, `$.prompt.read`, `$.prompt.fill` and `$.ui.*`: no `fs.*`, `http.*` or `process.spawn` call; and every `$.process.run` argument list starts with `datatug` followed by one of the four commands above. The argument lists are checked by the mod's tests (`tests/mod.test.ts`), since `claude plugin validate` lists call names only.
 
 ### AC: other-manifests-unchanged
 
@@ -122,7 +154,7 @@ Running `/datatug` again reloads the project and redraws an open pane. Text that
 
 **Given** the plugin metadata files for Claude Code, Codex, GitHub Copilot, Gemini CLI and Cursor
 **When** this Feature ships
-**Then** every metadata version is DataTug plugin `0.0.3`, advanced from `0.0.2`.
+**Then** every metadata version is one shared DataTug plugin version (`0.0.4` with query picking).
 
 ## Open Questions
 
