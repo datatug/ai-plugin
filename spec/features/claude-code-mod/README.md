@@ -21,7 +21,7 @@ Reading the project's files directly would make the mod a second reader of the p
 
 ## Behavior
 
-The mod lives in this repository next to the skills (`hooks/hooks.json`, `hooks/register.js`, and pure helpers under `lib/`) and is installed by the existing `datatug` plugin. Only Claude Code loads it; the Codex, Gemini CLI, Copilot and Cursor manifests do not reference it, though all five advance together from plugin `0.0.2` to `0.0.3`.
+The mod lives in this repository next to the skills (`hooks/hooks.json`, `hooks/register.js`, and pure helpers under `lib/`) and is installed by the existing `datatug` plugin. Only Claude Code loads it; the Codex, Gemini CLI, Copilot and Cursor manifests do not reference it, though all five advance together.
 
 `/datatug` runs the `datatug` CLI in the session's working directory and draws the result as a pane with four tabs:
 
@@ -168,18 +168,19 @@ Running saved queries, guarding database tool calls, a status band above the pro
 
 Verified on 2026-10-09 with Claude Code 2.1.295 on macOS (arm64):
 
-- `claude plugin test`: 67 tests pass across 6 files. `claude plugin validate . --strict` passes; its calls are `$.command.register`, `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.ui.invalidate`, `$.ui.open`, `$.ui.resolve`.
+- `claude plugin test`: 89 tests pass across 7 files. `claude plugin validate . --strict` passes; its calls are `$.command.register`, `$.process.run`, `$.prompt.fill`, `$.prompt.read`, `$.session.cwd`, `$.session.surfaces`, `$.ui.close`, `$.ui.invalidate`, `$.ui.open`, `$.ui.resolve`, `$.ui.toast`.
 - `claude -p "/datatug"` with the released `datatug` 0.67.0, in the root of the `chinook-demo` project: prints the text summary of the four sections (5 environments, 9 queries matching `datatug queries`, 1 board), and leaves the project unchanged.
 - The same in a folder that is not a project: the one-line "not a DataTug project" reply.
 - With `datatug` 0.51.0: the one-line "too old" reply naming 0.51.0, 0.67.0 and `datatug self-update`.
 - With no `datatug` on the `PATH`: the one-line reply naming `datatug:datatug-install`.
-- All five manifests are at `0.0.3`, and none but Claude Code's plugin layout references `hooks/`.
+- All five manifests are at `0.0.4`, and none but Claude Code's plugin layout references `hooks/`.
 
 Not exercised:
 
 - The pane drawn in an interactive terminal or the Desktop app. The tests check the tree the mod returns and its tab presses through the test kit, not how an app paints it.
 - A session that draws only on `vscode` or `mobile`: covered by tests with a stubbed surface list, not by a real client.
 - Other hosts: GitHub Copilot CLI 1.0.90 loads the plugin at 0.0.3 with its nine skills and logs one error line that the root `hooks/hooks.json` is not read; Codex 0.156.0 installs the plugin and showed no hook-related message, without a positive sign that it parsed the file; Gemini CLI and Cursor were not installed and are unverified. Both are documented to discover `hooks/hooks.json`.
+- Choosing a query and Ask Claude in a live terminal: checked through the test kit only, including whether the keys return to the prompt box.
 - How an interactive transcript treats the text reply, and re-running `/datatug` against a pane in a live terminal (checked through the test kit only).
 
 ---
