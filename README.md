@@ -10,10 +10,20 @@ This repository contains the plugin source. It is installed on top of the [`data
 |---|---|
 | [`skills/`](skills/README.md) | Agent skills - one per major `datatug` CLI surface area, progressively loaded per-verb |
 | [`.claude-plugin/`](.claude-plugin/plugin.json) | Claude Code plugin manifest |
+| [`hooks/`](hooks/hooks.json), [`lib/`](lib/cli.js) | Claude Code mod: the `/datatug` project pane (Claude Code only) |
+| [`tests/`](tests/mod.test.ts) | Mod tests, run with `claude plugin test` |
 | [`.codex-plugin/`](.codex-plugin/plugin.json) | Codex plugin manifest |
 | [`plugin.json`](plugin.json) | Portable Agent Plugins manifest for Cursor and other compatible hosts |
 | [`gemini-extension.json`](gemini-extension.json) | Gemini CLI extension manifest |
 | [`.github/plugin.json`](.github/plugin.json) | GitHub Copilot CLI / VS Code agent plugin manifest |
+
+## Claude Code mod
+
+In Claude Code, the plugin also ships a [mod](https://code.claude.com/docs/en/plugins/mods/overview): run `/datatug` in a DataTug project's root folder to open a read-only pane with four tabs (Overview, Environments, Queries, Boards). Everything it shows comes from the `datatug` CLI (`datatug show`, `datatug queries` and `datatug board list`, each with `--format json`); the mod reads no project file itself. Where nothing can draw (VS Code chat, `claude -p`), it prints a text summary instead.
+
+It requires Claude Code 2.1.287 or later and `datatug` 0.67.0 or later; other hosts ignore the mod. If the CLI is missing or older, `/datatug` says so and names the fix.
+
+Develop and test it from this directory with `claude --plugin-dir .`, `claude plugin validate .` and `claude plugin test`.
 
 ## Install
 
