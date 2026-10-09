@@ -120,3 +120,13 @@ test('a section shows at most MAX_ROWS rows, says how many it left out, and keep
   const exact = texts(project({ boards: okRun(many.slice(0, 200)) }), 'boards')
   expect(exact.length).toBe(200)
 })
+
+test('query rows carry the path of their query; folder and warning rows carry none', async () => {
+  const rows = sectionLines(project(), 'queries') as { text: string; path?: string }[]
+  expect(rows.filter((r) => r.path).map((r) => r.path)).toEqual([
+    'top-level',
+    'customers/customer-invoices',
+    'reference/country-facts',
+  ])
+  expect(rows.find((r) => r.text === 'customers/')?.path).toBeUndefined()
+})

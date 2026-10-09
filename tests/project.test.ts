@@ -39,10 +39,21 @@ test('buildProject turns query IDs into a folder tree', async () => {
   const { tree, count, warnings } = buildProject(results()).queries
   expect(count).toBe(3)
   expect(warnings).toEqual([])
-  expect(tree.queries).toEqual([{ id: 'top-level', title: null, type: null }])
+  expect(tree.queries).toEqual([{ id: 'top-level', path: 'top-level', title: null, type: null, parameters: [] }])
   expect(tree.children.map((c: { name: string }) => c.name)).toEqual(['customers', 'reference'])
-  expect(tree.children[0].queries).toEqual([{ id: 'customer-invoices', title: 'Customer invoices', type: 'SQL' }])
-  expect(tree.children[1].queries).toEqual([{ id: 'country-facts', title: null, type: 'HTTP' }])
+  expect(tree.children[0].queries).toEqual([
+    {
+      id: 'customer-invoices',
+      path: 'customers/customer-invoices',
+      title: 'Customer invoices',
+      type: 'SQL',
+      parameters: [
+        { id: 'InvoiceId', type: 'integer', required: true },
+        { id: 'From', type: null, required: false },
+      ],
+    },
+  ])
+  expect(tree.children[1].queries).toEqual([{ id: 'country-facts', path: 'reference/country-facts', title: null, type: 'HTTP', parameters: [] }])
 })
 
 test('buildProject lists boards with their titles', async () => {
@@ -115,6 +126,35 @@ test('an entry whose id cleans to nothing is dropped and a title that cleans to 
   expect(model.environments.items).toEqual([])
   expect(model.queries.count).toBe(1)
   expect(model.queries.tree.children.map((c: { name: string }) => c.name)).toEqual(['a'])
-  expect(model.queries.tree.children[0].queries).toEqual([{ id: 'b', title: null, type: null }])
+  expect(model.queries.tree.children[0].queries).toEqual([{ id: 'b', path: 'a/b', title: null, type: null, parameters: [] }])
   expect(model.boards.items).toEqual([])
+})
+
+test('a query keeps its cleaned parameters; entries without a usable id are dropped', async () => {
+  const model = buildProject(
+    results({
+      queries: okRun([
+        {
+          id: 'q',
+          parameters: [
+            { id: 'P\u001b[31m1', type: 'int\u0007eger', required: true },
+            { id: '\u001b' },
+            { type: 'string' },
+            null,
+            7,
+            { id: 'Opt', required: 'yes' },
+          ],
+        },
+      ]),
+    }),
+  )
+  expect(model.queries.tree.queries[0].parameters).toEqual([
+    { id: 'P [31m1', type: 'int eger', required: true },
+    { id: 'Opt', type: null, required: false },
+  ])
+})
+
+test('a CLI that lists no parameters (or a non-list) leaves the query with none', async () => {
+  const model = buildProject(results({ queries: okRun([{ id: 'a' }, { id: 'b', parameters: 'x' }]) }))
+  expect(model.queries.tree.queries.map((q: { parameters: unknown }) => q.parameters)).toEqual([[], []])
 })

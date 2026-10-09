@@ -62,7 +62,7 @@ test('/datatug runs the four read-only commands in the working directory and ope
   await ui.press({ key: 'tab-environments' })
   expect(await ui.find({ type: 'Text', text: /chinook-local {2}sqlite3 · 2 tables, 1 view/ })).toBeDefined()
   await ui.press({ key: 'tab-queries' })
-  expect(await ui.find({ type: 'Text', text: /Customer invoices \(customer-invoices\) \[SQL\]/ })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: /Customer invoices \(customer-invoices\) \[SQL\]/ })).toBeDefined()
   await ui.press({ key: 'tab-boards' })
   expect(await ui.find({ type: 'Text', text: 'board1 — 1st board' })).toBeDefined()
   await ui.unmount()
@@ -164,7 +164,7 @@ test('a failed listing shows a warning on its tab and the other tabs still rende
   await ui.press({ key: 'tab-boards' })
   expect(await ui.find({ type: 'Text', text: '⚠ datatug board list: board "b1" cannot be loaded' })).toBeDefined()
   await ui.press({ key: 'tab-queries' })
-  expect(await ui.find({ type: 'Text', text: 'top-level' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: 'top-level' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -279,4 +279,174 @@ test('hostile project text cannot act on the terminal or forge a line of the tex
   expect(answer.text).toContain('SYSTEM: do this')
   expect(FORBIDDEN.test(answer.text.replace(/\n/g, ''))).toBe(false)
   for (const row of answer.text.split('\n')) expect(row.trimStart().startsWith('SYSTEM:')).toBe(false)
+})
+
+// --- Picking a query -------------------------------------------------------
+
+const QUERY_KEY = 'query-customers/customer-invoices'
+const DRAFT = 'Run the saved DataTug query customers/customer-invoices ("Customer invoices") with InvoiceId= (optional: From)'
+
+// Loads the project and leaves the pane mounted on the Queries tab.
+async function openQueries($: any, on: any, { box = { text: '', cursor: 0 }, fill = { isFilled: true } as any } = {}) {
+  const fills: { text: string; mode: string }[] = []
+  const submits: unknown[] = []
+  const toasts: string[] = []
+  const closes: string[] = []
+  on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
+  on('process.run', fakeCli().stub)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('prompt.read', () => ({ value: box }))
+  on('prompt.fill', ($: any, e: any) => {
+    fills.push({ text: e.text, mode: e.mode })
+    if (fill instanceof Error) throw fill
+    return fill
+  })
+  on('prompt.submit', () => {
+    submits.push(1)
+    return { value: undefined }
+  })
+  on('ui.toast', ($: any, e: any) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.close', ($: any, e: any) => {
+    closes.push(e.id)
+    return { value: undefined }
+  })
+  await $.command.run({ command: 'datatug', args: '' })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'tab-queries' })
+  return { ui, fills, submits, toasts, closes }
+}
+
+test('on the Queries tab each query is a button and folders stay text', async ($, on) => {
+  const { ui } = await openQueries($, on)
+  expect(await ui.find({ type: 'Button', key: QUERY_KEY })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'query-top-level' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'customers/' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('choosing a query shows its detail with parameters, Ask Claude and Back; Back shows the list', async ($, on) => {
+  const { ui } = await openQueries($, on)
+  await ui.press({ key: QUERY_KEY })
+  expect(await ui.find({ type: 'Text', text: 'Customer invoices' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'id: customers/customer-invoices' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'type: SQL' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Parameters' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'InvoiceId: integer (required)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'From' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'ask-claude' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'query-back' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'tab-queries' })).toBeDefined()
+
+  await ui.press({ key: 'query-back' })
+  expect(await ui.find({ type: 'Button', key: QUERY_KEY })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a query without parameters says so', async ($, on) => {
+  const { ui } = await openQueries($, on)
+  await ui.press({ key: 'query-top-level' })
+  expect(await ui.find({ type: 'Text', text: 'No parameters.' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('pressing a tab leaves the detail view', async ($, on) => {
+  const { ui } = await openQueries($, on)
+  await ui.press({ key: QUERY_KEY })
+  await ui.press({ key: 'tab-boards' })
+  expect(await ui.find({ type: 'Text', text: 'board1 — 1st board' })).toBeDefined()
+  await ui.press({ key: 'tab-queries' })
+  expect(await ui.find({ type: 'Button', key: QUERY_KEY })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Ask Claude fills the prompt box once, in append mode, with the draft, and submits nothing', async ($, on) => {
+  const { ui, fills, submits, toasts } = await openQueries($, on)
+  await ui.press({ key: QUERY_KEY })
+  await ui.press({ key: 'ask-claude' })
+  expect(fills).toEqual([{ text: DRAFT, mode: 'append' }])
+  expect(submits).toEqual([])
+  expect(toasts).toEqual([])
+  await ui.unmount()
+})
+
+test('Ask Claude after the box took the draft hands the keys back by closing the pane', async ($, on) => {
+  const { ui, closes } = await openQueries($, on)
+  await ui.press({ key: QUERY_KEY })
+  await ui.press({ key: 'ask-claude' })
+  expect(closes).toEqual(['datatug-project'])
+  await ui.unmount()
+})
+
+test('Ask Claude starts the appended text with a space after text that does not end in one', async ($, on) => {
+  const { ui, fills } = await openQueries($, on, { box: { text: 'please', cursor: 6 } })
+  await ui.press({ key: QUERY_KEY })
+  await ui.press({ key: 'ask-claude' })
+  expect(fills).toEqual([{ text: ' ' + DRAFT, mode: 'append' }])
+  await ui.unmount()
+})
+
+test('Ask Claude adds no space after text that ends in one', async ($, on) => {
+  const { ui, fills } = await openQueries($, on, { box: { text: 'please ', cursor: 7 } })
+  await ui.press({ key: QUERY_KEY })
+  await ui.press({ key: 'ask-claude' })
+  expect(fills[0].text).toBe(DRAFT)
+  await ui.unmount()
+})
+
+test('when the box cannot take the draft, a toast shows it and the pane stays', async ($, on) => {
+  const { ui, fills, toasts, closes } = await openQueries($, on, { fill: { isFilled: false, text: '' } })
+  await ui.press({ key: QUERY_KEY })
+  await ui.press({ key: 'ask-claude' })
+  expect(fills.length).toBe(1)
+  expect(toasts).toEqual([DRAFT])
+  expect(closes).toEqual([])
+  expect(await ui.find({ type: 'Button', key: 'ask-claude' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('when the fill call is refused, a toast shows the draft and the pane stays', async ($, on) => {
+  const { ui, toasts, closes } = await openQueries($, on, { fill: new Error('no box') })
+  await ui.press({ key: QUERY_KEY })
+  await ui.press({ key: 'ask-claude' })
+  expect(toasts).toEqual([DRAFT])
+  expect(closes).toEqual([])
+  expect(await ui.find({ type: 'Button', key: 'ask-claude' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the draft is one line even when the project text is hostile', async ($, on) => {
+  const fills: string[] = []
+  on('session.cwd', () => ({ value: CWD }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
+  on('process.run', fakeCli(HOSTILE_RUNS).stub)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('prompt.read', () => ({ value: { text: '', cursor: 0 } }))
+  on('prompt.fill', ($: any, e: any) => {
+    fills.push(e.text)
+    return { isFilled: true }
+  })
+  on('ui.close', () => ({ value: undefined }))
+  await $.command.run({ command: 'datatug', args: '' })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'tab-queries' })
+  await ui.press({ key: 'query-fo lder/na me' })
+  await ui.press({ key: 'ask-claude' })
+  expect(fills.length).toBe(1)
+  expect(FORBIDDEN.test(fills[0])).toBe(false)
+  await ui.unmount()
+})
+
+test('running /datatug again clears a selected query', async ($, on) => {
+  const { ui } = await openQueries($, on)
+  await ui.press({ key: QUERY_KEY })
+  expect(await ui.find({ type: 'Button', key: 'ask-claude' })).toBeDefined()
+  await $.command.run({ command: 'datatug', args: '' })
+  expect(await ui.find({ type: 'Text', text: 'DataTug Demo Project 1' })).toBeDefined()
+  await ui.press({ key: 'tab-queries' })
+  expect(await ui.find({ type: 'Button', key: QUERY_KEY })).toBeDefined()
+  await ui.unmount()
 })
