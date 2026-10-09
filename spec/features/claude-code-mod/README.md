@@ -47,6 +47,8 @@ The CLI resolves a project at the root of the working directory only, so `/datat
 
 The mod is read-only. It does not run queries, guard tool calls, edit project files, or read them.
 
+Running `/datatug` again reloads the project and redraws an open pane. Text that comes from the project or from the CLI (titles, ids, types, drivers, error messages) is shown with control characters, bidirectional controls and line breaks replaced by spaces and long values cut short, so a project file cannot blank the pane, act on the terminal or forge a line of the reply. Each tab shows at most 200 rows and says how many more there are. The mod runs the `datatug` found first on the `PATH`.
+
 ### Journey
 
 1. A user installs the plugin and runs `/datatug` in a DataTug project. **Observable good result:** a pane opens with the four tabs populated from the CLI's output.
@@ -88,15 +90,27 @@ The mod is read-only. It does not run queries, guard tool calls, edit project fi
 
 ### AC: failed-command-isolated
 
-**Given** a project where one of the three listing commands exits non-zero (for example a board that cannot be loaded) and the folder is a project
+**Given** a project where one of the three listing commands exits non-zero (for example a project file that `datatug show` cannot read, while the queries and boards are listed) and the folder is a project
 **When** `/datatug` runs
 **Then** the tabs that command feeds show a warning row carrying the command's name and the error message it printed, and the other tabs render normally.
+
+### AC: rerun-refreshes-pane
+
+**Given** an open pane and a project that has changed
+**When** `/datatug` runs again
+**Then** the pane shows the Overview tab with the changed project, without a key press.
+
+### AC: project-text-is-sanitised
+
+**Given** a project whose titles or ids hold control characters, bidirectional controls or line breaks
+**When** `/datatug` runs
+**Then** the pane is drawn and the text summary is printed with those characters replaced by spaces, and no line of the reply begins with text taken from after a line break in a title.
 
 ### AC: cli-only-data
 
 **Given** the mod's source
 **When** `claude plugin validate` lists its `hooks:` and `calls:`
-**Then** the calls are limited to `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.command.register` and `$.ui.*`: no `fs.*`, `http.*` or `process.spawn` call; and every `$.process.run` argument list starts with `datatug` followed by one of the four commands above.
+**Then** the calls are limited to `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.command.register` and `$.ui.*`: no `fs.*`, `http.*` or `process.spawn` call; and every `$.process.run` argument list starts with `datatug` followed by one of the four commands above. The argument lists are checked by the mod's tests (`tests/mod.test.ts`), since `claude plugin validate` lists call names only.
 
 ### AC: other-manifests-unchanged
 
@@ -122,7 +136,7 @@ Running saved queries, guarding database tool calls, a status band above the pro
 
 Verified on 2026-10-09 with Claude Code 2.1.295 on macOS (arm64):
 
-- `claude plugin test`: 47 tests pass across 5 files. `claude plugin validate . --strict` passes; its calls are `$.command.register`, `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.ui.invalidate`, `$.ui.open`, `$.ui.resolve`.
+- `claude plugin test`: 67 tests pass across 6 files. `claude plugin validate . --strict` passes; its calls are `$.command.register`, `$.process.run`, `$.session.cwd`, `$.session.surfaces`, `$.ui.invalidate`, `$.ui.open`, `$.ui.resolve`.
 - `claude -p "/datatug"` with the released `datatug` 0.67.0, in the root of the `chinook-demo` project: prints the text summary of the four sections (5 environments, 9 queries matching `datatug queries`, 1 board), and leaves the project unchanged.
 - The same in a folder that is not a project: the one-line "not a DataTug project" reply.
 - With `datatug` 0.51.0: the one-line "too old" reply naming 0.51.0, 0.67.0 and `datatug self-update`.
@@ -133,7 +147,8 @@ Not exercised:
 
 - The pane drawn in an interactive terminal or the Desktop app. The tests check the tree the mod returns and its tab presses through the test kit, not how an app paints it.
 - A session that draws only on `vscode` or `mobile`: covered by tests with a stubbed surface list, not by a real client.
-- Gemini CLI, GitHub Copilot and Cursor loading a plugin that has a `hooks/hooks.json`. The file holds a `modules` key and no `hooks` key; their behaviour with it is unverified.
+- Other hosts: GitHub Copilot CLI 1.0.90 loads the plugin at 0.0.3 with its nine skills and logs one error line that the root `hooks/hooks.json` is not read; Codex 0.156.0 installs the plugin and showed no hook-related message, without a positive sign that it parsed the file; Gemini CLI and Cursor were not installed and are unverified. Both are documented to discover `hooks/hooks.json`.
+- How an interactive transcript treats the text reply, and re-running `/datatug` against a pane in a live terminal (checked through the test kit only).
 
 ---
 *This document follows the https://specscore.md/feature-specification*
