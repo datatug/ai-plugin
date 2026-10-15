@@ -219,3 +219,44 @@ test('a database opened with a password reaches no argument list, prompt, drawin
   expect(fills[0]).toContain('--db datatug://p1/db1?env=local')
   expect(fills[0].includes('postgres://')).toBe(false)
 })
+
+import { redact, scrub } from '../hooks/register'
+import { stripUnsafe } from '../lib/text.js'
+
+test('redact hides a password that holds an @, a / or a ?, and a url with no credentials is unchanged', () => {
+  expect(redact('postgres://u:p@ss@host/db')).toBe('postgres://***@host/db')
+  expect(redact('postgres://u:p/ss@host/db')).toBe('postgres://***@host/db')
+  expect(redact('postgres://u:p?w@host/db?sslmode=x')).toBe('postgres://***@host/db')
+  expect(redact('sqlite://user:s3cret@/tmp/x.db?mode=ro')).toBe('sqlite://***@/tmp/x.db')
+  expect(redact('sqlite:///tmp/x.db')).toBe('sqlite:///tmp/x.db')
+  expect(redact('datatug://p1/db?env=local')).toBe('datatug://p1/db?env=local')
+  for (const u of ['postgres://u:p@ss@host/db', 'postgres://u:p/ss@host/db']) expect(redact(u) === u).toBe(false)
+})
+
+test('scrub blanks a connection string inside text', () => {
+  expect(scrub('connect postgres://u:p/ss@host/db failed')).toBe('connect *** failed')
+  expect(scrub('plain message')).toBe('plain message')
+})
+
+test('stripUnsafe covers the characters the project pane covers', () => {
+  expect(stripUnsafe('a b⁠c﻿d\u{e0041}e\u0007f')).toBe('a b c d e f')
+})
+
+test('the rows file is emptied when the command failed, and the folder is checked before the redirect', async ($, on) => {
+  const writes: string[] = []
+  let command = ''
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('fs.read', () => ({ value: '[{"name":"SECRET"}]' }) as never)
+  on('fs.write', (_$: unknown, e: { path: string }) => {
+    writes.push(e.path)
+    return { value: undefined } as never
+  })
+  on('tool.call', { tool: 'Bash' }, (_$: unknown, e: { command: string }) => {
+    command = e.command
+    return { isError: true, result: { stdout: '', stderr: 'boom' }, text: '', ref: {} } as never
+  })
+  const ran = await $.tool.call({ tool: 'Bash', tool_use_id: 'q9', command: 'datatug query run --db x --from y' } as never)
+  expect(writes).toHaveLength(1)
+  expect(command).toContain("umask 077 && mkdir -p -m 700 '/tmp/datatug-claude-mod' && chmod 700 '/tmp/datatug-claude-mod' && [ -O '/tmp/datatug-claude-mod' ] && [ ! -L '/tmp/datatug-claude-mod' ]")
+  expect(JSON.stringify(ran).includes('SECRET')).toBe(false)
+})

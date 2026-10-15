@@ -3,6 +3,7 @@ import type { Register } from 'claude-code'
 
 import { MIN_CLI_VERSION, VERSION_ARGS, isOlder, missingCliText, parseVersion, tooOldText } from '../lib/cli.js'
 import { isProjectView } from '../lib/command.js'
+import { stripUnsafe } from '../lib/text.js'
 import { canDrawPane } from '../lib/view.js'
 import { registerProject } from './project.js'
 
@@ -88,7 +89,13 @@ async function rowsDir($: Host): Promise<string> {
 
 // Control characters and line breaks would let a data value act on the terminal.
 function clean(text: string): string {
-  return text.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/g, ' ')
+  return stripUnsafe(text)
+}
+
+// A connection string anywhere in text (an error message that repeats `--db`, a stored command) is
+// blanked up to the last @ that follows it, so a password with an @ or a / in it cannot survive.
+export function scrub(text: string): string {
+  return stripUnsafe(text).replace(/[a-z][a-z0-9+.-]*:\/\/\S*@\S*/gi, '***')
 }
 
 function cell(value: unknown): string {
@@ -295,7 +302,7 @@ export function parseRows(stdout: string, id: string, command: string): GridResu
   const collection = /--from\s+(\S+)/.exec(command)?.[1] ?? /--query\s+(\S+)/.exec(command)?.[1] ?? 'result'
   const dbArg = /--db\s+(\S+)/.exec(command)?.[1] ?? ''
   const db = /^[a-z][a-z0-9+.-]*:\/\//i.test(dbArg) && redact(dbArg) === dbArg ? dbArg : ''
-  return { id, command, collection: clean(collection).slice(0, 60), db, columns, types, rows, total: data.length, isTruncated: data.length > rows.length }
+  return { id, command: scrub(command).slice(0, 300), collection: clean(collection).slice(0, 60), db, columns, types, rows, total: data.length, isTruncated: data.length > rows.length }
 }
 
 type Host = Parameters<typeof update>[0] & {
@@ -316,7 +323,8 @@ let openRun = 0
 // A connection string without its credentials or query: safe to show.
 export function redact(url: string): string {
   if (isDbRef(url)) return url
-  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, '$1***@').replace(/[?#].*$/, '')
+  // Up to the LAST @ is credentials, even when the password holds an @, a / or a ?: unparsable is hidden.
+  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/).*@/is, '$1***@').replace(/[?#].*$/s, '')
 }
 
 // A project database reference (datatug://<project>/<db-id>[?env=<ENV>]) holds no credentials: it
@@ -470,7 +478,7 @@ async function openDatabase($: Host, raw: string) {
     await update($, openDb, () => ({ status: 'ready', provider, note, target, url: plain ? url : '', items, message: '' }))
     if (!isDbRef(url)) void addToProject($, url)
   } catch (err) {
-    await update($, openDb, () => ({ status: 'error', provider, note, target, url: '', items: [], message: err instanceof Error ? err.message.slice(0, 120) : 'failed' }))
+    await update($, openDb, () => ({ status: 'error', provider, note, target, url: '', items: [], message: err instanceof Error ? scrub(err.message).slice(0, 120) : 'failed' }))
   }
 }
 
@@ -598,7 +606,7 @@ async function openDbRecords($: Host, name: string, kept: string, known: number 
     await update($, results, all => ({ ...Object.fromEntries(Object.entries(all).slice(-9)), [id]: result }))
     await update($, dbRecords, () => ({ name, status: 'ready', message: '', resultId: id, page: 0 }))
   } catch (err) {
-    await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'error', message: err instanceof Error ? err.message.slice(0, 140) : 'failed' }))
+    await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'error', message: err instanceof Error ? scrub(err.message).slice(0, 140) : 'failed' }))
   }
 }
 
@@ -646,7 +654,7 @@ async function addToProject($: Host, url: string) {
     })
     if (out.exitCode !== 0) {
       const old = /unknown command|unknown flag|no such command|invalid command/i.test(`${out.stderr}${out.stdout}`)
-      await loadDatabases($, sel, old ? 'Adding to the project needs a newer datatug CLI.' : `Not added to the project: ${clean(out.stderr || out.stdout).slice(0, 120)}`)
+      await loadDatabases($, sel, old ? 'Adding to the project needs a newer datatug CLI.' : `Not added to the project: ${scrub(out.stderr || out.stdout).slice(0, 120)}`)
       return
     }
     const res = JSON.parse(out.stdout.slice(out.stdout.indexOf('{'))) as { added?: boolean; dbRef?: string }
@@ -765,22 +773,23 @@ export const register: Register = on => {
     const hasFormat = /--format[ =]/.test(e.command)
     const dir = await rowsDir($ as Host)
     const file = `${dir}/${e.tool_use_id.replace(/[^A-Za-z0-9_-]/g, '_')}.json`
-    const command = `mkdir -p -m 700 '${dir}' && ${e.command.trim()}${hasFormat ? '' : ' --format json'} > '${file}'`
+    // The folder must be ours and not a link before the rows are written, and the file is owner-only.
+    const command = `umask 077 && mkdir -p -m 700 '${dir}' && chmod 700 '${dir}' && [ -O '${dir}' ] && [ ! -L '${dir}' ] && ${e.command.trim()}${hasFormat ? '' : ' --format json'} > '${file}'`
     // The rows go to a file, not through Bash's output (30000 characters, then cut).
     const ran = await next({ ...e, command })
-    if (ran.deny !== undefined || ran.isError === true) return ran
     let stdout: string
     try {
       stdout = await $.fs.read(file)
     } catch {
       return ran
     }
-    // The rows are in memory now: empty the file so they are not left on disk.
+    // The rows are in memory now: empty the file so they are not left on disk, whatever the outcome.
     try {
       await $.fs.write(file, '')
     } catch {
       // a file that cannot be emptied is left as it is
     }
+    if (ran.deny !== undefined || ran.isError === true) return ran
     const parsed = parseRows(stdout, e.tool_use_id, e.command)
     if (parsed === null) return ran
     await update($, results, all => {
@@ -1123,7 +1132,7 @@ export const register: Register = on => {
     const heldUrl = dbUrl !== '' ? dbUrl : od.url
     // A prompt names the database by its project reference, never by a connection string.
     const promptDb = isDbRef(heldUrl) ? heldUrl : dbPromptRef
-    const canDraft = promptDb !== ''
+    const canDraft = promptDb !== '' && /^[A-Za-z0-9_][A-Za-z0-9_.$-]*$/.test(dt.name ?? '')
     let dbTableCard = null
     // The Table card and the Table records card take turns in the same place.
     if (dt.name !== null && (await read($, dbRecords)).name === null) {
