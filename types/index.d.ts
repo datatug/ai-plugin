@@ -1,0 +1,120 @@
+export type GridResult = {
+  id: string
+  collection: string
+  db?: string
+  command: string
+  columns: string[]
+  types: Record<string, string>
+  rows: Record<string, unknown>[]
+  total: number
+  isTruncated: boolean
+}
+
+export type GridView = {
+  current: string | null
+  selected: number | null
+  offset: number
+  column?: string | null
+  showTable?: boolean
+  tableName?: string | null
+  trail?: { current: string; selected: number }[]
+}
+
+export type ProjectInfo = { id: string; title: string; origin: string }
+
+export type ProjectsState = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  items: ProjectInfo[]
+  message: string
+}
+
+export type BagEntry = {
+  id: string
+  address: string
+  value: string
+  source: string
+  isOn: boolean
+  kind?: 'table' | 'column' | 'value'
+  table?: string
+  column?: string
+  db?: string
+}
+
+export type SchemaColumn = { name: string; type: string; pk: number | null; nullable: boolean | null }
+
+export type SchemaFk = {
+  name: string
+  columns: string[]
+  refSchema: string
+  refTable: string
+  refColumns: string[]
+}
+
+export type SchemaTable = {
+  env: string
+  source: string
+  driver: string
+  schema: string
+  name: string
+  columns: SchemaColumn[]
+  foreignKeys: SchemaFk[]
+}
+
+export type SchemaState = {
+  projectId: string | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  tables: SchemaTable[]
+  message: string
+}
+
+export type OpenDbState = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  provider: string
+  note: string
+  target: string
+  url: string
+  items: { name: string; kind: string; rows?: number | null; atLeast?: boolean; counting?: boolean }[]
+  tables?: SchemaTable[]
+  message: string
+}
+
+export type DatabasesState = {
+  projectId: string | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  items: { env: string; id: string; driver: string }[]
+  message: string
+  note: string
+}
+
+export type DbTableState = {
+  name: string | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  message: string
+  result: GridResult | null
+}
+
+export type DbRecordsState = {
+  name: string | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  message: string
+  resultId: string | null
+  page: number
+}
+
+export type Bag = { isEnabled: boolean; entries: BagEntry[] }
+
+declare module 'claude-code' {
+  interface PluginState {
+    'datatug': { results: Record<string, GridResult>; view: GridView; shownRows: Record<string, number>
+    projects: ProjectsState
+    project: { selected: string | null; isOpen?: boolean }
+    bags: Record<string, Bag>
+    schema: SchemaState
+    openDb: OpenDbState
+    databases: DatabasesState
+    dbTable: DbTableState
+    columnOrder: 'defined' | 'alpha' | 'type'
+    dbRecords: DbRecordsState
+  }
+  }
+}

@@ -9,6 +9,7 @@ import {
   parseVersion,
   tooOldText,
 } from '../lib/cli.js'
+import { isProjectView } from '../lib/command.js'
 import { appendPrefix, queryDraft } from '../lib/draft.js'
 import { findQuery, summaryText } from '../lib/lines.js'
 import { buildProject } from '../lib/project.js'
@@ -41,16 +42,18 @@ async function runDatatug($, args, cwd) {
   }
 }
 
-export function register(on) {
+export function registerProject(on) {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'datatug',
-      description: 'Show the DataTug project in this directory',
+      description: 'Open the DataTug panel (/datatug project: the project in this directory)',
     })
     return next(e)
   })
 
-  on('command.run', { command: 'datatug' }, async ($) => {
+  on('command.run', { command: 'datatug' }, async ($, e, next) => {
+    // Plain `/datatug` is the panel (hooks/register.tsx); only `/datatug project` is this pane.
+    if (!isProjectView(e.args)) return next(e)
     const cwd = await $.session.cwd()
 
     const version = await runDatatug($, VERSION_ARGS, cwd)
@@ -87,7 +90,7 @@ export function register(on) {
       // fall through to the text summary
     }
     return { text: summaryText(project) }
-  })
+  }).catch(() => ({ text: 'The DataTug project could not be read. Run `/datatug project` again.' }))
 
   on('ui.render', { component: 'Pane' }, async ($, e, next) => {
     if (e.requestId !== PANE) return next(e)
