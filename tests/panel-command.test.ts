@@ -305,3 +305,67 @@ test('a command with a trailing shell comment is left alone, so no redirect can 
   await $.tool.call({ tool: 'Bash', tool_use_id: 'q5', command: 'datatug query run --db x --from t # note' } as never)
   expect(commands).toEqual(['datatug query run --db x --from t # note'])
 })
+
+test('a datatug reference with anything but env in its query is not a reference', () => {
+  expect(isDbRef('datatug://p/db?password=abc')).toBe(false)
+  expect(isDbRef('datatug://p/db?env=x&pw=hunter2')).toBe(false)
+  expect(isDbRef('datatug://p%40x/db')).toBe(false)
+  expect(isDbRef('datatug://p/db?env=local')).toBe(true)
+  expect(redact('datatug://p/db?password=abc').includes('abc')).toBe(false)
+})
+
+test('scrub blanks a scheme-less user:password@host and the provider is not the user name', () => {
+  expect(scrub('dial failed for user:pw@tcp(h:3306)/db').includes('pw')).toBe(false)
+  expect(scrub('root:s3cr3t@h').includes('s3cr3t')).toBe(false)
+})
+
+test('words of a datatug command inside another command are not intercepted', async ($, on) => {
+  const commands: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_$: unknown, e: { command: string }) => {
+    commands.push(e.command)
+    return { result: { stdout: 'x', stderr: '' }, text: '', ref: {} } as never
+  })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'a1', command: 'git commit -m "docs: datatug query run"' } as never)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'a2', command: 'grep -rn "datatug query run" skills' } as never)
+  expect(commands).toEqual(['git commit -m "docs: datatug query run"', 'grep -rn "datatug query run" skills'])
+})
+
+test('a datatug command with a flag first, an env prefix or a path is intercepted', async ($, on) => {
+  const commands: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_$: unknown, e: { command: string }) => {
+    commands.push(e.command)
+    return { result: { stdout: '', stderr: '' }, text: '', ref: {} } as never
+  })
+  for (const [i, c] of ['datatug --client x query run --db y --from t', 'FOO=1 datatug query run --db y --from t', '/usr/local/bin/datatug query run --db y --from t'].entries())
+    await $.tool.call({ tool: 'Bash', tool_use_id: `b${i}`, command: c } as never)
+  expect(commands.every(c => c.includes("> '/tmp/datatug-claude-mod/b"))).toBe(true)
+})
+
+test('the rows file is emptied even when it could not be read', async ($, on) => {
+  const writes: string[] = []
+  on('fs.read', () => {
+    throw new Error('too large')
+  })
+  on('fs.exists', () => ({ value: true }) as never)
+  on('fs.write', (_$: unknown, e: { path: string }) => {
+    writes.push(e.path)
+    return { value: undefined } as never
+  })
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '' }, text: '', ref: {} }) as never)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'c1', command: 'datatug query run --db x --from y' } as never)
+  expect(writes).toEqual(['/tmp/datatug-claude-mod/c1.json'])
+})
+
+test('a command that throws still has its rows file emptied', async ($, on) => {
+  const writes: string[] = []
+  on('fs.exists', () => ({ value: true }) as never)
+  on('fs.write', (_$: unknown, e: { path: string }) => {
+    writes.push(e.path)
+    return { value: undefined } as never
+  })
+  on('tool.call', { tool: 'Bash' }, () => {
+    throw new Error('interrupted')
+  })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'c2', command: 'datatug query run --db x --from y' } as never).catch(() => undefined)
+  expect(writes).toEqual(['/tmp/datatug-claude-mod/c2.json'])
+})

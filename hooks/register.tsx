@@ -69,7 +69,8 @@ const view = atom({ plugin: 'datatug', key: 'view' } as const, {
   offset: 0,
 } as GridView)
 
-const RUN = /\bdatatug\b[^|;&<>]*\bquery\s+run\b/
+// `datatug ... query run` as the command itself: not the words inside a quoted argument of another command.
+const RUN = /^\s*(?:(?:env|time)\s+|[A-Za-z_]\w*=\S*\s+)*(?:\S*\/)?datatug(?:\s+[^\s'"]+)*?\s+query\s+run\b/
 const PLAIN = /[|;&<>$`()\n\r#\\]/
 const NO_PANE_TEXT = 'The DataTug panel needs the terminal or the Desktop app. Run `/datatug project` for a text summary of the project in this folder.'
 const ROWS_DIR = 'datatug-claude-mod'
@@ -98,6 +99,7 @@ export function scrub(text: string): string {
   return stripUnsafe(text)
     .replace(/[a-z][a-z0-9+.-]*:\/\/[^\n]*@\S*|[a-z][a-z0-9+.-]*:\/\/\S*/gi, '***')
     .replace(/\b[a-z][a-z0-9+.-]*:[a-z0-9_]+=\S*/gi, '***')
+    .replace(/\S+:\S+@\S+/g, '***')
     .replace(/\b(password|passwd|pwd|pass|secret|token|api_?key)\s*[=:]\s*[^\s;&]+/gi, '$1=***')
 }
 
@@ -129,7 +131,7 @@ function isNumeric(result: GridResult, name: string): boolean {
 
 // What the model reads in place of the rows: shape only, never values.
 function summary(result: GridResult): string {
-  const cols = result.columns.slice(0, 40).join(', ')
+  const cols = result.columns.slice(0, 40).map(c => clean(c).slice(0, 60)).join(', ')
   return [
     `DataTug query returned ${result.total} row${result.total === 1 ? '' : 's'} x ${result.columns.length} column${result.columns.length === 1 ? '' : 's'}: ${cols}.`,
     result.isTruncated ? `The grid holds the first ${result.rows.length} rows.` : '',
@@ -338,7 +340,8 @@ export function redact(url: string): string {
 // A project database reference (datatug://<project>/<db-id>[?env=<ENV>]) holds no credentials: it
 // is passed as written and is the one URL that may go into a prompt together with its query.
 export function isDbRef(url: string): boolean {
-  return /^datatug:\/\/[^/?#@:\s]*\/[^/?#@:\s]+(\?[A-Za-z0-9_=&%.-]*)?$/i.test(url.trim())
+  const part = String.raw`(?:[A-Za-z0-9._~-]|%(?!40|3a)[0-9a-f]{2})`
+  return new RegExp(`^datatug://${part}*/${part}+(\\?env=${part}+)?$`, 'i').test(url.trim())
 }
 
 // The reference of a database the project holds: what the CLI resolves back to its source.
@@ -365,7 +368,7 @@ export function dbName(target: string): string {
 }
 
 export function providerOf(url: string): string {
-  return /^([a-z][a-z0-9+.-]*):/i.exec(url.trim())?.[1].toLowerCase() ?? ''
+  return /^([a-z][a-z0-9+.-]*):(?:\/\/|[a-z0-9_]+=)/i.exec(url.trim())?.[1].toLowerCase() ?? ''
 }
 
 const TOP = 100
@@ -789,19 +792,24 @@ export const register: Register = on => {
     // The folder must be ours and not a link before the rows are written, and the file is owner-only.
     const command = `umask 077 && mkdir -p -m 700 '${dir}' && [ ! -L '${dir}' ] && [ -O '${dir}' ] && chmod 700 '${dir}' && ${e.command.trim()}${hasFormat ? '' : ' --format json'} > '${file}'`
     // The rows go to a file, not through Bash's output (30000 characters, then cut).
-    const ran = await next({ ...e, command })
-    let stdout: string
+    let ran: Awaited<ReturnType<typeof next>>
+    let stdout: string | null = null
     try {
-      stdout = await $.fs.read(file)
-    } catch {
-      return ran
+      ran = await next({ ...e, command })
+      try {
+        stdout = await $.fs.read(file)
+      } catch {
+        // unreadable: the file is emptied below if it is there
+      }
+    } finally {
+      // Whatever happened, the rows are not left on disk: emptied once read, or if they could not be.
+      try {
+        if (stdout !== null || (await $.fs.exists(file))) await $.fs.write(file, '')
+      } catch {
+        // a file that cannot be emptied is left as it is
+      }
     }
-    // The rows are in memory now: empty the file so they are not left on disk, whatever the outcome.
-    try {
-      await $.fs.write(file, '')
-    } catch {
-      // a file that cannot be emptied is left as it is
-    }
+    if (stdout === null) return ran
     if (ran.deny !== undefined || ran.isError === true) return ran
     const parsed = parseRows(stdout, e.tool_use_id, e.command)
     if (parsed === null) return ran
@@ -814,7 +822,7 @@ export const register: Register = on => {
     const out = (ran.result ?? {}) as object
     // Not `ran`'s ref or text: core would use the messages it already made for the model.
     return { result: { ...out, stdout: summary(parsed) } } as typeof ran
-  }).catch(($, e, next) => next(e))
+  }).catch(() => ({ deny: 'The DataTug mod could not show the rows of this query, so it did not hand them to Claude. Ask the person to run it again.' }) as never)
 
   // The grid in the chat, under the call's own row: a Markdown table whose first
   // column links each row; pressing a link opens that record's card in the pane.
