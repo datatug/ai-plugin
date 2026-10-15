@@ -70,7 +70,7 @@ const view = atom({ plugin: 'datatug', key: 'view' } as const, {
 } as GridView)
 
 // `datatug ... query run` as the command itself: not the words inside a quoted argument of another command.
-const RUN = /^\s*(?:(?:env|time)\s+|[A-Za-z_]\w*=\S*\s+)*(?:\S*\/)?datatug(?:\s+[^\s'"]+)*?\s+query\s+run(?![\w-])(?!.*\s--?help\b)/
+const RUN = /^\s*(?:(?:env|time)\s+|[A-Za-z_]\w*=\S*\s+)*(?:\S*\/)?datatug(?:\s+[^\s'"]+)*?\s+query\s+run(?![\w-])(?!.*\s-(?:-help|h)\b)/
 const PLAIN = /[|;&<>$`()\n\r#\\]/
 const NO_PANE_TEXT = 'The DataTug panel needs the terminal or the Desktop app. Run `/datatug project` for a text summary of the project in this folder.'
 const ROWS_DIR = 'datatug-claude-mod'
@@ -105,6 +105,7 @@ export function scrub(text: string): string {
     .replace(/[a-z][a-z0-9+.-]*:\/\/[^\n]*@\S*|[a-z][a-z0-9+.-]*:\/\/\S*/gi, '***')
     .replace(/\b[a-z][a-z0-9+.-]*:[a-z0-9_]+=\S*/gi, '***')
     .replace(/\S+:\S+@\S+/g, '***')
+        .replace(/--?(?:password|passwd|pwd|token|secret)[ =]+\S+/gi, '***')
     .replace(/\b(password|passwd|pwd|pass|secret|token|api_?key)\s*[=:]\s*[^\s;&]+/gi, '$1=***')
 }
 
@@ -336,6 +337,9 @@ const SHOWN = /^[a-z][a-z0-9+.-]*:\/\/(\*\*\*@)?[A-Za-z0-9.-]*(:\d+)?(\/[A-Za-z0
 export function redact(url: string): string {
   if (isDbRef(url)) return url
   // Up to the LAST @ is credentials, even when the password holds an @, a / or a ?.
+  const scheme0 = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url.trim())?.[1].toLowerCase()
+  // An @ together with a ? or # may sit in a query or fragment: nothing can be told apart, so hide it all.
+  if (url.includes('@') && /[?#]/.test(url)) return scheme0 === undefined ? '***' : `${scheme0}://***`
   const cut = url.replace(/^([a-z][a-z0-9+.-]*:\/\/).*@/is, '$1***@').replace(/[?#].*$/s, '')
   if (SHOWN.test(cut)) return cut
   const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url.trim())?.[1].toLowerCase()
@@ -387,8 +391,8 @@ type Detected = { url: string; provider: string; note: string } | { error: strin
 // A connection string is used as written. A file path is recognised by its name (.sqlite, .db, ...)
 // or, failing that, by its first bytes: every SQLite file starts with "SQLite format 3".
 // A path is echoed only when it looks like one: text typed as a connection string without a scheme is not.
-function shownPath(path: string): string {
-  return /^[\w ./~+@-]+$/.test(path) && !path.includes('@') ? clean(path).slice(0, 160) : 'that path'
+function shownPath(typed: string, path: string): string {
+  return /^[\w ./~+-]+$/.test(path) && /[/.]/.test(typed) ? clean(path).slice(0, 160) : 'that path'
 }
 
 async function detectDatabase($: Host, raw: string): Promise<Detected> {
@@ -398,11 +402,11 @@ async function detectDatabase($: Host, raw: string): Promise<Detected> {
   let path = text
   if (path.startsWith('~/')) path = `${(await $.env.get('HOME')) ?? ''}${path.slice(1)}`
   if (!path.startsWith('/')) path = `${await $.session.cwd()}/${path.replace(/^\.\//, '')}`
-  if (!(await $.fs.exists(path))) return { error: `No file at ${shownPath(path)}` }
+  if (!(await $.fs.exists(path))) return { error: `No file at ${shownPath(text, path)}` }
   if (SQLITE_FILE.test(path)) return { url: `sqlite://${path}`, provider: 'sqlite', note: 'from the file name' }
   const head = await $.process.run(['head', '-c', '16', path], { timeoutMs: 5000 })
   if (head.exitCode === 0 && head.stdout.startsWith('SQLite format 3')) return { url: `sqlite://${path}`, provider: 'sqlite', note: 'from the file content' }
-  return { error: `Could not tell what kind of database ${shownPath(path)} is. Use a connection string such as sqlite:///path/to.db` }
+  return { error: `Could not tell what kind of database ${shownPath(text, path)} is. Use a connection string such as sqlite:///path/to.db` }
 }
 
 type DeclaredTable = {

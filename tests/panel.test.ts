@@ -362,7 +362,7 @@ test('Open DB lists a SQLite database and keeps the password out of sight', asyn
   expect(d).toContain('v_sales')
   expect(d.includes('sqlite_sequence')).toBe(false)
   expect(d.includes('idx')).toBe(false)
-  expect(d).toContain('sqlite://***@/tmp/x.db')
+  expect(d).toContain('sqlite://***')
   expect(d.includes('s3cret')).toBe(false)
   const call = seen.find(x => x.includes('sqlite_master')) ?? ''
   expect(call).toContain('DATATUG_OPEN_DB')

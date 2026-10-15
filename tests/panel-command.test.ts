@@ -226,8 +226,8 @@ import { stripUnsafe } from '../lib/text.js'
 test('redact hides a password that holds an @, a / or a ?, and a url with no credentials is unchanged', () => {
   expect(redact('postgres://u:p@ss@host/db')).toBe('postgres://***@host/db')
   expect(redact('postgres://u:p/ss@host/db')).toBe('postgres://***@host/db')
-  expect(redact('postgres://u:p?w@host/db?sslmode=x')).toBe('postgres://***@host/db')
-  expect(redact('sqlite://user:s3cret@/tmp/x.db?mode=ro')).toBe('sqlite://***@/tmp/x.db')
+  expect(redact('postgres://u:p?w@host/db?sslmode=x')).toBe('postgres://***')
+  expect(redact('sqlite://user:s3cret@/tmp/x.db?mode=ro')).toBe('sqlite://***')
   expect(redact('sqlite:///tmp/x.db')).toBe('sqlite:///tmp/x.db')
   expect(redact('datatug://p1/db?env=local')).toBe('datatug://p1/db?env=local')
   for (const u of ['postgres://u:p@ss@host/db', 'postgres://u:p/ss@host/db']) expect(redact(u) === u).toBe(false)
@@ -390,4 +390,10 @@ test('datatug query run --help and run-all are not intercepted', async ($, on) =
   await $.tool.call({ tool: 'Bash', tool_use_id: 'h1', command: 'datatug query run --help' } as never)
   await $.tool.call({ tool: 'Bash', tool_use_id: 'h2', command: 'datatug query run-all' } as never)
   expect(commands).toEqual(['datatug query run --help', 'datatug query run-all'])
+})
+
+test('an @ with a query or fragment hides everything after the scheme', () => {
+  for (const u of ['postgres://host/db?password=p@ssword9', 'postgres://h/db?user=a&password=x@Secret', 'postgres://h:5432/db#frag@hunter2', 'mysql://h/db?pw=abc.def@ghi/jkl'])
+    expect(redact(u)).toBe(`${u.split(':')[0]}://***`)
+  expect(scrub('failed --password hunter2 now').includes('hunter2')).toBe(false)
 })
