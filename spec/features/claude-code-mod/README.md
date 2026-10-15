@@ -72,13 +72,31 @@ The panel is a column of cards. Each card is drawn only from what the `datatug` 
 - **Record**: one record's fields, with a cart button on each, previous and next, and a foreign-key value that opens the record it points to, with a way back.
 - **Column**: one column's declared and observed facts; the observed ones come from the rows already loaded, never from a new read.
 
+- **Open in DataTug**: a line on the Table metadata, Table records and Record cards, described below.
+
+Every `datatug` command the mod runs carries `DATATUG_CLIENT=claude-mod`, the CLI's caller mechanism, so the local DataTug agent (`datatug daemon`) is kept running as a side effect of the cards' own calls. The mod never runs `datatug daemon start`.
+
 ### Connection strings
 
-A database opened by a connection string or a file path is handed to the CLI in the environment variable `DATATUG_OPEN_DB` and named `env:DATATUG_OPEN_DB` in the argument list. Its connection string is never in an argument list, a prompt, a notice, a link or session state when it carries credentials or a query. A database the project holds is addressed by its reference `datatug://<project>/<db>[?env=<ENV>]`, which carries no credential.
+A database opened by a connection string or a file path is handed to the CLI in the environment variable `DATATUG_OPEN_DB` and named `env:DATATUG_OPEN_DB` in the argument list. To add it to the selected project, `db add` gets its own source id (`--name`, from the file or database name, with `-2`, `-3`... when taken) in the `local` environment: a SQLite file by its plain absolute path (one with credentials, a query or a fragment is not added), any other database through an environment variable of its own, `DATATUG_OPEN_DB_<NAME>_<FINGERPRINT>` (the fingerprint of the id keeps ids such as `shop-db` and `shop_db` apart), so two databases are never taken for one. Its connection string is never in an argument list, a prompt, a notice, a link or session state when it carries credentials or a query. A database the project holds is addressed by its reference `datatug://<project>/<db>[?env=<ENV>]`, which carries no credential.
 
 ### What the model sees
 
 A `datatug query run` the model issues in one plain Bash command (no pipe, redirect or other shell syntax) has its rows written to a file in an owner-only folder under the temporary folder, read by the mod, and emptied (also when it cannot be read or the call fails; a session killed mid-call can leave the file); the result the model reads is a summary of the shape (row and column counts and column names) and a line saying the rows were shown to the person and withheld. The rows appear in the chat as a grid under the call, and a row number opens its Record card. The prompts the panel drafts name a database only by its `datatug://` reference. The one place values enter a prompt is the context bag: a value the person added to the bag and checked is written into the **Ask Claude...** draft because the person chose it.
+
+### Web UI links
+
+The Table metadata, Table records and Record cards of a database that is a source of a project carry an "Open in DataTug" line: a link to the same table, its top 100 records or that record in the hosted web UI, which reads them from the person's local agent.
+
+- **The CLI builds the link.** The mod asks `datatug daemon url --db <datatug:// reference> --table <name> [--schema S] [--view] [--records --limit 100 | --record <key JSON>] --format json`, after `datatug daemon status --format json` for the port, and never assembles a URL itself. Neither command starts the daemon or sends it a request. A database is named only by the `datatug://` reference it was opened by, or by the id and environment `db add` returned for it; never by a path or connection string.
+- **Only after the card's data.** A card asks for its link only after its own data call resolved (the Table card once the database's schema is read, the Table records card once its records are read).
+- **The mod checks every link before drawing it.** It must be `https://datatug.app` (or the development host below), the agent's own store path on `127.0.0.1` with the port `daemon status` reported, no `@` before the fragment, no second `://`, at most 2048 characters, the query `schema` (and `limit` for records) only, and the fragment `code` (and `pk` for a record) only, with a one-time code present. Anything else is no link.
+- **Development host.** The plugin setting `webDevHost` admits exactly `http(s)://datatug.localhost[:port]` as a second origin. It is never inferred from the CLI or `DATATUG_UI_BASE`; any other base the CLI prints shows "This DataTug CLI points at a development web UI; no link".
+- **Record key.** Built from the table's declared primary-key columns only (never `$key` or another column), with an integer above 2^53 - 1 kept as the digits the CLI printed, so it is passed unrounded. A table with no declared key, or a null, non-plain or over-256-character key value, gets "No record link: ..." in place of the link.
+- **Same machine only.** A link is drawn only on the `terminal` surface with neither `SSH_CONNECTION` nor `SSH_TTY` set: the Desktop app, VS Code and mobile are remote surfaces that cannot be shown to open links on the agent's machine, so they show "Open in DataTug works only on the machine that runs the agent".
+- **Freshness.** A link is drawn for 60 seconds, then asked for again before it is drawn; every line offers **Check again**.
+- **No link, a named reason.** The agent not running (or the CLI not starting): "DataTug web link unavailable: the local DataTug agent is not running (datatug daemon start)". `uiSupport` other than `available` for the view: "The DataTug web UI cannot open this view yet". A CLI older than 0.86.0, one without `daemon url`, or a link with no one-time code: "update the DataTug CLI". A database not in a project: "Add this database to a project to open it in DataTug". A source the project reads from an environment variable (`dsnEnv`): a line naming the variable the agent must be started with. A Record card of the opened database before it is in a project says so too; a Record card of a chat grid has no line.
+- **Kept out of the model's reach.** The link (it carries a one-time code) is kept in the mod's memory only; session state holds the line's status, the time and a fingerprint of the request. No link, key or row goes into a tool result, a notice, a prompt or the context bag.
 
 ### Journey
 
@@ -87,6 +105,7 @@ A `datatug query run` the model issues in one plain Bash command (no pipe, redir
 3. The `datatug` CLI is not installed, or is older than the mod needs (0.84.1: `datatug://` references, `db add`, `db schema --columns` and `--client`). **Observable good result:** a one-line text reply names the problem and the remedy (`datatug:datatug-install`, or `datatug self-update` with the version needed), and no pane opens.
 4. The user runs `/datatug project` where nothing can draw (VS Code chat panel, `claude -p`). **Observable good result:** the command replies with a plain-text summary of the same four sections.
 5. The user runs `/datatug`. **Observable good result:** the panel opens with the Project card and the Databases card; opening a database lists its tables, and pressing a table shows its metadata and offers its records.
+6. In a terminal on the machine that runs the agent, the user opens a table of a project database. **Observable good result:** the Table card shows "Open in DataTug" once the web UI serves the view, or the one line that says why not, with **Check again**.
 
 ## Acceptance Criteria
 
@@ -198,6 +217,36 @@ A `datatug query run` the model issues in one plain Bash command (no pipe, redir
 **When** the panel runs `db schema`, `db add` and `query run` for it and the person presses Ask Claude on its table
 **Then** no argument list, state value, prompt or notice holds the connection string; the connection string is in `DATATUG_OPEN_DB` only, and the prompt names the database by its `datatug://` reference.
 
+### AC: web-link-from-the-cli
+
+**Given** a database of a project, the agent running and `datatug daemon url` reporting the view as available
+**When** the Table metadata, Table records or Record card has loaded its data in a terminal on the agent's machine
+**Then** the card draws exactly the link the CLI printed, asked with the database's `datatug://` reference (and for a record its declared primary key, an integer above 2^53 - 1 as its digits), with **Check again**; it asked for nothing before its data loaded.
+
+### AC: web-link-named-warnings
+
+**Given** the agent not running or the CLI not starting, a view the web UI cannot open yet, a CLI older than 0.86.0 or a link without a one-time code, a database not in a project, or a source read from an environment variable
+**When** a linked card renders
+**Then** it shows that case's one line and **Check again**, and draws no link element.
+
+### AC: web-link-checked-not-trusted
+
+**Given** a link from the CLI with another origin, credentials, a second scheme, another agent host or port, an unexpected query or fragment parameter, or a development base that is not the configured `webDevHost`
+**When** the card renders
+**Then** no link is drawn; a configured `http(s)://datatug.localhost[:port]` that matches exactly is drawn, and a look-alike is not.
+
+### AC: web-link-same-machine-and-fresh
+
+**Given** the card on `desktop`, `vscode` or `mobile`, or a terminal with `SSH_CONNECTION` or `SSH_TTY` set; and a link drawn 60 seconds ago
+**When** the card renders
+**Then** the first gets "works only on the machine that runs the agent" and no `daemon url` call; the second is asked for again (only `daemon status` and `daemon url`) and turns into the not-running line when the agent stopped.
+
+### AC: web-link-out-of-the-model
+
+**Given** a Record card with a drawn link and a non-key value in the row
+**When** the person uses Ask Claude, the context bag and the notices
+**Then** no prompt, notice, tool result or argument list holds the link, its one-time code, its fragment or the non-key value, and the mod's session state holds no link or code; the only row values in session state are the rows the cards already keep for display, plus, per row, the digits of an integer too large for JavaScript.
+
 ### AC: other-manifests-unchanged
 
 **Given** the Codex, Gemini CLI, Copilot and Cursor manifests
@@ -208,7 +257,7 @@ A `datatug query run` the model issues in one plain Bash command (no pipe, redir
 
 **Given** the plugin metadata files for Claude Code, Codex, GitHub Copilot, Gemini CLI and Cursor
 **When** this Feature ships
-**Then** every metadata version is one shared DataTug plugin version (`0.1.0` with the panel).
+**Then** every metadata version is one shared DataTug plugin version (`0.2.0` with the web UI links).
 
 ## Open Questions
 
@@ -216,9 +265,11 @@ None at this time.
 
 ## Out of Scope
 
-Running saved queries, denying or rewriting database tool calls beyond moving a `datatug query run`'s rows out of the model's reach, a status band above the prompt, editing project files, entities, links to the web UI, and finding a project in a parent folder. Each can become its own Feature.
+Running saved queries, denying or rewriting database tool calls beyond moving a `datatug query run`'s rows out of the model's reach, a status band above the prompt, editing project files, entities, links from the other cards to the web UI, and finding a project in a parent folder. Each can become its own Feature.
 
 ## Verification Status
+
+Web UI links, 2026-10-15, Claude Code 2.1.301 on macOS (arm64), `datatug` 0.86.0 installed: `claude plugin test` passes (222 tests across 12 files, the link cases among them); `claude plugin validate . --strict` passes. Against the live `datatug` 0.86.0 and a daemon started in a throwaway home: the argument lists the mod builds for the three kinds (a composite key and a key of 9007199254740993 among them) are accepted, the links printed pass the mod's checks once their `uiSupport` reads `available` (0.86.0 reports `pending` for all three, so the cards show the pending line today), a link with `DATATUG_UI_BASE` set is a development link unless `webDevHost` names it, and `db add` takes a SQLite file by path with `--name` and `--env local`. Not exercised: the links drawn in a live terminal, or opened in a browser.
 
 Panel port, 2026-10-15, Claude Code 2.1.301 on macOS (arm64), `datatug` 0.84.1 installed: `claude plugin test` passes (171 tests across 10 files, the earlier 114 among them with `/datatug` changed to `/datatug project`, and the panel's 25 prototype tests); `claude plugin validate . --strict` passes. Live with the released `datatug` 0.84.1 in `chinook-demo`: `claude --plugin-dir . -p "/datatug"` prints the one line naming `/datatug project`, and `-p "/datatug project"` prints the text summary. Checked through the test kit only: the panel was not drawn in a live terminal or the Desktop app, and none of its cards was exercised against a live `datatug` in this port.
 

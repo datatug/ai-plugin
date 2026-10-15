@@ -29,7 +29,7 @@ let isAsking = false // an Ask Claude press is running
 // started, or runs past the timeout, resolves with isStarted false.
 async function runDatatug($, args, cwd) {
   try {
-    const result = await $.process.run(['datatug', ...args], { cwd, timeoutMs: TIMEOUT_MS })
+    const result = await $.process.run(['datatug', ...args], { cwd, timeoutMs: TIMEOUT_MS, env: { DATATUG_CLIENT: 'claude-mod' } })
     return {
       isStarted: true,
       exitCode: result.exitCode,
