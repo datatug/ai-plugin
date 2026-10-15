@@ -10,7 +10,7 @@ This repository contains the plugin source. It is installed on top of the [`data
 |---|---|
 | [`skills/`](skills/README.md) | Agent skills - one per major `datatug` CLI surface area, progressively loaded per-verb |
 | [`.claude-plugin/`](.claude-plugin/plugin.json) | Claude Code plugin manifest |
-| [`hooks/`](hooks/hooks.json), [`lib/`](lib/cli.js) | Claude Code mod: the `/datatug` project pane (Claude Code only) |
+| [`hooks/`](hooks/hooks.json), [`lib/`](lib/cli.js), [`types/`](types/index.d.ts) | Claude Code mod: the `/datatug` panel and `/datatug project` pane (Claude Code only) |
 | [`tests/`](tests/mod.test.ts) | Mod tests, run with `claude plugin test` |
 | [`.codex-plugin/`](.codex-plugin/plugin.json) | Codex plugin manifest |
 | [`plugin.json`](plugin.json) | Portable Agent Plugins manifest for Cursor and other compatible hosts |
@@ -19,13 +19,22 @@ This repository contains the plugin source. It is installed on top of the [`data
 
 ## Claude Code mod
 
-In Claude Code, the plugin also ships a [mod](https://code.claude.com/docs/en/plugins/mods/overview): run `/datatug` in a DataTug project's root folder to open a read-only pane with four tabs (Overview, Environments, Queries, Boards). Everything it shows comes from the `datatug` CLI (`datatug show`, `datatug queries` and `datatug board list`, each with `--format json`); the mod reads no project file itself. Where nothing can draw (VS Code chat, `claude -p`), it prints a text summary instead.
+In Claude Code, the plugin also ships a [mod](https://code.claude.com/docs/en/plugins/mods/overview) with two views. Everything either shows comes from the `datatug` CLI; the mod reads no project file itself.
 
-On the Queries tab, Tab moves between queries and Enter opens one (title, ID, type and parameters). Press `a` there to draft a request in the prompt box without sending it, so you can add details first; this closes the pane, and `/datatug` opens it again. `b` goes back to the list.
+**`/datatug`** opens the DataTug panel, a column of cards beside the transcript:
+
+- **Project**: pick one of your registered projects.
+- **Databases**: the project's databases, plus a field that opens another one from a connection string or a file path and adds it to the project. Open a database to list its tables and views, and count their rows on request.
+- **Table**: columns, declared types, nullability, keys and foreign keys (press a foreign key to go to the table it points at), who references the table, and the column order you prefer (as defined, A to Z, or by type). **Show records** lists its first 100 records, 20 to a page; a row number opens the **Record** card, where a foreign-key value opens the record it points to. **Column** shows one column's facts.
+- **Context bag**: the cart buttons next to a table, a column or a field add it to your bag. Check what you want and press **Ask Claude...** to draft one question about it in the prompt box; the draft is never sent for you.
+
+When Claude runs a plain `datatug query run ...` command, the rows are shown to you as a grid under the call and Claude is given only a summary (row and column counts and column names), not the rows. This covers a plain command only: one with a pipe, redirect, comment or other shell syntax of its own, or another tool, is not intercepted: Claude reads its output. A row number in the grid opens its Record card. The rows are written to an owner-only folder under your temporary folder and emptied once read (or, when they cannot be read or the call fails, as soon as the call ends; a session killed mid-call can leave one file). Other `--format` values are written the same way and shown nowhere. A Bash call run in the background returns before the rows are written, so they are not intercepted and can stay in the folder until you delete them. The rows of the last ten results are kept in the session's plugin state for the cards. This is a convenience that keeps rows out of the transcript, not a security boundary: Claude can still read data with a command the mod does not intercept. A database you opened with a connection string reaches the CLI in the `DATATUG_OPEN_DB` environment variable only, never in an argument, a prompt or a link, and the prompts the panel drafts name a database by its `datatug://<project>/<db>` reference. The one place a value enters a prompt is the context bag: a value you added to the bag and checked is part of the **Ask Claude...** draft because you chose it.
+
+**`/datatug project`** opens a read-only pane for the DataTug project in the session's working directory, with four tabs (Overview, Environments, Queries, Boards), from `datatug show`, `datatug queries` and `datatug board list`, each with `--format json`. Where nothing can draw (VS Code chat, `claude -p`), it prints a text summary instead. On the Queries tab, Tab moves between queries and Enter opens one (title, ID, type and parameters). Press `a` there to draft a request in the prompt box without sending it, so you can add details first; this closes the pane, and `/datatug project` opens it again. `b` goes back to the list.
 
 The mod runs the `datatug` found first on your `PATH`, in the session's working directory, as the plugin's skills do.
 
-It requires Claude Code 2.1.287 or later and `datatug` 0.67.0 or later; other hosts do not run the mod (GitHub Copilot CLI logs one error line about the root `hooks/hooks.json` when it loads the plugin, and still loads its skills). If the CLI is missing or older, `/datatug` says so and names the fix.
+It requires Claude Code 2.1.287 or later and `datatug` 0.84.1 or later (what the panel needs: `datatug://` database references, `datatug db add`, `datatug db schema --columns` and the `--client` flag); other hosts do not run the mod (GitHub Copilot CLI logs one error line about the root `hooks/hooks.json` when it loads the plugin, and still loads its skills). If the CLI is missing or older, `/datatug` says so and names the fix.
 
 Develop and test it from this directory with `claude --plugin-dir .`, `claude plugin validate .` and `claude plugin test`.
 
