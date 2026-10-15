@@ -5,8 +5,10 @@ export type GridResult = {
   // The datatug:// reference of the project database the rows came from (Record links); absent for
   // a chat grid.
   linkRef?: string
-  // The rows as the CLI printed them, one JSON object each, read for key values without rounding.
-  lines?: string[]
+  // Which opened database the rows came from (the panel's open counter), for a reference added later.
+  openRun?: number
+  // Per row, the integer fields JSON.parse rounded (above 2^53 - 1), as their digits; null for none.
+  bigInts?: (Record<string, string> | null)[]
   command: string
   columns: string[]
   types: Record<string, string>

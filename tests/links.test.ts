@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { MIN_CLI_VERSION } from '../lib/cli.js'
-import { LINK_MIN_CLI_VERSION, checkHref, fingerprint, isSameHost, keyValue, parseDevHost, rawFields, readLink, recordKey, statusPort, urlArgs } from '../lib/links.js'
+import { LINK_MIN_CLI_VERSION, bigIntegers, checkHref, fingerprint, isSameHost, keyValue, parseDevHost, rawFields, readLink, recordKey, statusPort, urlArgs } from '../lib/links.js'
 import { sourceName, sqlitePath } from '../hooks/register'
 
 // What `datatug daemon url --format json` 0.86.0 prints, as run against the demo project.
@@ -127,12 +127,31 @@ test('key values are read losslessly from the raw row', () => {
 })
 
 test('the record key holds the declared primary-key columns only, never $key or another column', () => {
-  const line = '{"$key":"rid","PlaylistId":1,"TrackId":3402,"Secret":"s3cret"}'
-  expect(recordKey(['PlaylistId', 'TrackId'], line)).toEqual({ key: { PlaylistId: 1, TrackId: 3402 } })
-  expect(recordKey(['playlistid'], line)).toEqual({ key: { PlaylistId: 1 } })
-  expect(recordKey([], line)).toEqual({ why: 'the table has no declared primary key' })
-  expect('why' in recordKey(['Missing'], line)).toBe(true)
-  expect('why' in recordKey(['Id'], undefined as unknown as string)).toBe(true)
+  const row = { $key: 'rid', PlaylistId: 1, TrackId: 3402, Secret: 's3cret' }
+  expect(recordKey(['PlaylistId', 'TrackId'], row, null)).toEqual({ key: { PlaylistId: 1, TrackId: 3402 } })
+  expect(recordKey(['playlistid'], row, null)).toEqual({ key: { PlaylistId: 1 } })
+  expect(recordKey([], row, null)).toEqual({ why: 'the table has no declared primary key' })
+  expect('why' in recordKey(['Missing'], row, null)).toBe(true)
+  expect('why' in recordKey(['$key'], row, null)).toBe(true)
+  expect('why' in recordKey(['Id'], undefined as never, null)).toBe(true)
+  for (const v of [null, true, 1.5, { a: 1 }, '', 'x'.repeat(257)]) expect('why' in recordKey(['Id'], { Id: v }, null)).toBe(true)
+  expect(recordKey(['Id'], { Id: "O'Brien (1)" }, null)).toEqual({ key: { Id: "O'Brien (1)" } })
+})
+
+test('only the integers JSON.parse rounds are kept, as their digits, and they make the key', () => {
+  const line = '{"Id":9007199254740993,"Small":5,"Name":"9007199254740993","N":{"x":9007199254740993}}'
+  expect(bigIntegers(line)).toEqual({ Id: '9007199254740993' })
+  expect(bigIntegers('{"Id":5,"Name":"x"}')).toBe(null)
+  const row = JSON.parse(line)
+  expect(recordKey(['Id'], row, bigIntegers(line))).toEqual({ key: { Id: '9007199254740993' } })
+  // Without the digits a rounded integer is refused, never sent rounded.
+  expect('why' in recordKey(['Id'], row, null)).toBe(true)
+})
+
+test('characters encodeURIComponent leaves as they are pass; a percent-encoded dot segment does not', () => {
+  const quoted = `${STORE}/table/O'Brien(1)!*/record?schema=#code=${CODE}&pk=%7B%22Name%22%3A%22O'Brien%20(1)!*%22%7D`
+  expect(checkHref(quoted, 'record', 8989, null)).toEqual({ status: 'ok', href: quoted })
+  for (const seg of ['%2e%2e', '%2E%2e', '.%2e', '%2e']) expect(checkHref(TABLE.replace('/table/Album', `/table/${seg}/x`), 'table', 8989, null).status).not.toBe('ok')
 })
 
 test('session state names a request by a fingerprint, not by its key', () => {

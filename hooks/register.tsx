@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import { MIN_CLI_VERSION, VERSION_ARGS, isOlder, missingCliText, parseVersion, tooOldText } from '../lib/cli.js'
-import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, fingerprint, isSameHost, parseDevHost, readLink, recordKey, sourceUnavailableText, urlArgs } from '../lib/links.js'
+import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, bigIntegers, fingerprint, isSameHost, parseDevHost, readLink, recordKey, sourceUnavailableText, urlArgs } from '../lib/links.js'
 import { isProjectView } from '../lib/command.js'
 import { stripUnsafe } from '../lib/text.js'
 import { canDrawPane } from '../lib/view.js'
@@ -618,6 +618,7 @@ async function openRecordByKey($: Host, db: string, table: string, column: strin
 // rows are streamed as JSON lines and the stream is cut once 100 have arrived. They are stored as a
 // result, so pressing a row number opens the Record card like a row of a chat grid.
 async function openDbRecords($: Host, name: string, kept: string, known: number | null | undefined) {
+  const run0 = openRun
   await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'loading' }))
   try {
     const url = dbUrl !== '' ? dbUrl : kept
@@ -653,7 +654,10 @@ async function openDbRecords($: Host, name: string, kept: string, known: number 
       collection: clean(name).slice(0, 80),
       total: Math.max(known ?? 0, lines.length),
       isTruncated: (known ?? 0) > lines.length,
-      ...(linkRef !== '' ? { linkRef, lines } : {}),
+      // Only the key-sized facts a Record link needs beside the parsed rows: the integers they round.
+      ...(linkRef !== '' ? { linkRef } : {}),
+      openRun: run0,
+      bigInts: lines.map(l => bigIntegers(l)),
     }
     await update($, results, all => ({ ...Object.fromEntries(Object.entries(all).slice(-9)), [id]: result }))
     await update($, dbRecords, () => ({ name, status: 'ready', message: '', resultId: id, page: 0 }))
@@ -732,7 +736,8 @@ async function addToProject($: Host, url: string) {
   try {
     for (let n = 1; n <= 5; n++) {
       const name = n === 1 ? base : `${base.slice(0, 60)}-${n}`
-      const envName = `DATATUG_OPEN_DB_${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
+      // The id's own fingerprint keeps names that fold together (shop-db, shop_db, Shop.db) apart.
+      const envName = `DATATUG_OPEN_DB_${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_${fingerprint(name).slice(0, 6).toUpperCase()}`
       const out = await $.process.run(['datatug', 'db', 'add', '--project', sel, '--db', path ?? `env:${envName}`, '--name', name, '--env', 'local', '--format', 'json'], {
         cwd: await $.session.cwd(),
         timeoutMs: 20000,
@@ -819,12 +824,14 @@ async function fetchLink($: Host, card: string, req: LinkReq, force: boolean) {
   if (args === null) return
   const id = fingerprint(JSON.stringify(args))
   if (fetching.get(card) === id) return
-  const cur = (await read($, links))[card]
-  const t = await nowMs($)
-  if (!force && cur !== undefined && cur.req === id && cur.status !== 'checking' && cur.isStale !== true && t - cur.at < LINK_TTL_MS) return
+  // Claimed before any await, so two drawings at once never ask twice (each ask mints a code).
   fetching.set(card, id)
-  hrefs.delete(card)
+  let t = 0
   try {
+    const cur = (await read($, links))[card]
+    t = await nowMs($)
+    if (!force && cur !== undefined && cur.req === id && cur.status !== 'checking' && cur.isStale !== true && t - cur.at < LINK_TTL_MS) return
+    hrefs.delete(card)
     await update($, links, all => ({ ...all, [card]: { req: id, status: 'checking', at: t } }))
     let next: { status: LinkState['status']; href?: string }
     if (cliVersion !== undefined && cliVersion !== null && isOlder(cliVersion, parseVersion(LINK_MIN_CLI_VERSION) as number[])) {
@@ -1836,7 +1843,9 @@ export const register: Register = (on, options) => {
           collection: clean(fk.refTable).slice(0, 80),
           total: 1,
           db: result.db ?? '',
-          ...(result.linkRef !== undefined ? { linkRef: result.linkRef, lines: [got.line] } : {}),
+          ...(result.linkRef !== undefined ? { linkRef: result.linkRef } : {}),
+          ...(result.openRun !== undefined ? { openRun: result.openRun } : {}),
+          bigInts: [bigIntegers(got.line)],
         }
         await update($, results, all => ({ ...Object.fromEntries(Object.entries(all).slice(-9)), [id]: refResult }))
         await update($, view, cur => ({ ...cur, trail: [...(cur.trail ?? []), { current: result.id, selected: index }].slice(-10), current: id, selected: 0, column: null, showTable: false, tableName: null }))
@@ -1845,13 +1854,16 @@ export const register: Register = (on, options) => {
       // A record of a project database links to its record view by its declared primary key; a row of a
       // chat grid has no project, database or table identity, so it gets no line at all.
       let recordLink = null
-      if (result.linkRef !== undefined) {
+      // A record of the opened database read before `db add` returned takes the reference it returned.
+      const recRef = result.linkRef ?? (result.openRun !== undefined && result.openRun === openRun ? (od.ref ?? '') : undefined)
+      if (recRef === '') recordLink = linkRow('record', MESSAGES['not-in-project'], null)
+      else if (recRef !== undefined) {
         const pkCols = (recTable?.columns ?? []).filter(c => c.pk !== null).sort((a, b) => (a.pk as number) - (b.pk as number)).map(c => c.name)
-        const key = recordKey(pkCols, result.lines?.[index])
-        const srcEnv = envOf(result.linkRef)
+        const key = recordKey(pkCols, row, result.bigInts?.[index])
+        const srcEnv = envOf(recRef)
         const pre = srcEnv !== undefined ? sourceUnavailableText(srcEnv) : 'why' in key ? `No record link: ${key.why}` : isHere ? null : MESSAGES['same-host']
         const schemaOf = recTable === undefined || recTable.driver.startsWith('sqlite') ? undefined : recTable.schema || undefined
-        recordLink = linkRow('record', pre, pre === null && 'key' in key ? { kind: 'record', db: result.linkRef, table: result.collection, schema: schemaOf, key: key.key } : null)
+        recordLink = linkRow('record', pre, pre === null && 'key' in key ? { kind: 'record', db: recRef, table: result.collection, schema: schemaOf, key: key.key } : null)
       }
       recordCard = (
         <Box key="card-record" {...card}>
