@@ -1,12 +1,20 @@
 {
   "name": "datatug",
   "description": "DataTug CLI plugin: skills that teach AI agents how to use the datatug CLI for data exploration, dataset management, schema scanning, and query execution.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "DataTug"
   },
   "homepage": "https://github.com/datatug/ai-plugin",
   "repository": "https://github.com/datatug/ai-plugin",
   "license": "MIT",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "webDevHost": {
+      "type": "string",
+      "title": "Development web UI host",
+      "description": "Leave empty. Set it only when you run the DataTug web UI locally at http://datatug.localhost (or https, with an optional port, such as http://datatug.localhost:4200): \"Open in DataTug\" links to that exact address are then drawn. Any other value is ignored. Links to https://datatug.app are drawn either way.",
+      "default": ""
+    }
+  }
 }

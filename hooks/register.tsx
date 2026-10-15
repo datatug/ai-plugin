@@ -2,12 +2,13 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import { MIN_CLI_VERSION, VERSION_ARGS, isOlder, missingCliText, parseVersion, tooOldText } from '../lib/cli.js'
+import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, fingerprint, isSameHost, parseDevHost, readLink, recordKey, sourceUnavailableText, urlArgs } from '../lib/links.js'
 import { isProjectView } from '../lib/command.js'
 import { stripUnsafe } from '../lib/text.js'
 import { canDrawPane } from '../lib/view.js'
 import { registerProject } from './project.js'
 
-import type { Bag, BagEntry, DbRecordsState, DatabasesState, DbTableState, GridResult, GridView, OpenDbState, ProjectsState, SchemaColumn, SchemaFk, SchemaState, SchemaTable } from '../types'
+import type { Bag, BagEntry, DbRecordsState, DatabasesState, DbTableState, GridResult, GridView, LinkState, OpenDbState, ProjectsState, SchemaColumn, SchemaFk, SchemaState, SchemaTable } from '../types'
 
 const PANE = 'datatug'
 const TITLE = 'DataTug'
@@ -68,6 +69,24 @@ const view = atom({ plugin: 'datatug', key: 'view' } as const, {
   selected: null,
   offset: 0,
 } as GridView)
+// The "Open in DataTug" state of each linked card (table, records, record): what it shows and when it
+// was checked. Never the link itself, a key value or a row: the link is kept in memory only (`hrefs`).
+const links = atom({ plugin: 'datatug', key: 'links' } as const, {} as Record<string, LinkState>)
+
+// Every datatug call the mod makes names the mod as its caller, so the CLI keeps the local DataTug
+// agent (the daemon the web links open) running as a side effect of the cards' own calls.
+const CLIENT = { DATATUG_CLIENT: 'claude-mod' } as const
+const cliEnv = (env: Record<string, string> = {}) => ({ ...env, ...CLIENT })
+
+// The datatug version `/datatug` found (null: a development build; undefined: not checked since load).
+let cliVersion: number[] | null | undefined
+// The development web UI origin the person configured in the plugin's settings, or null.
+let devOrigin: string | null = null
+// Links the CLI printed and the mod checked, by card, with the request they answer. Memory only:
+// a link carries a one-time code.
+const hrefs = new Map<string, { req: string; href: string }>()
+// The request each card is fetching now, so a render does not start a second fetch.
+const fetching = new Map<string, string>()
 
 // `datatug ... query run` as the command itself: not the words inside a quoted argument of another command.
 const RUN = /^\s*(?:(?:env|time)\s+|[A-Za-z_]\w*=\S*\s+)*(?:\S*\/)?datatug(?:\s+[^\s'"]+)*?\s+query\s+run(?![\w-])(?!.*\s-(?:-help|h)\b)/
@@ -317,7 +336,7 @@ export function parseRows(stdout: string, id: string, command: string): GridResu
 }
 
 type Host = Parameters<typeof update>[0] & {
-  process: { run: (argv: string[], init?: { cwd?: string; timeoutMs?: number }) => Promise<{ exitCode: number; stdout: string }> }
+  process: { run: (argv: string[], init?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> }) => Promise<{ exitCode: number; stdout: string; stderr?: string }> }
   session: { cwd: () => Promise<string> }
 }
 
@@ -467,7 +486,7 @@ async function openDatabase($: Host, raw: string) {
     // The URL goes in an environment variable, never in the argument list.
     const cwd = await $.session.cwd()
     const { arg, env } = dbArg(url)
-    const sch = await $.process.run(['datatug', 'db', 'schema', '--db', arg, '--columns', '--format', 'json'], { cwd, timeoutMs: 30000, env })
+    const sch = await $.process.run(['datatug', 'db', 'schema', '--db', arg, '--columns', '--format', 'json'], { cwd, timeoutMs: 30000, env: cliEnv(env) })
     const doc = sch.exitCode === 0 && sch.stdout.trimStart().startsWith('{') ? (JSON.parse(sch.stdout) as { provider?: string; tables?: DeclaredTable[] }) : null
     if (doc !== null && Array.isArray(doc.tables)) {
       if (isDbRef(url) && typeof doc.provider === 'string') provider = clean(doc.provider).slice(0, 30)
@@ -478,7 +497,7 @@ async function openDatabase($: Host, raw: string) {
       const tables = declared.map(t => declaredTable(t, provider))
       dbUrl = url
       const plain = redact(url) === url
-      await update($, openDb, () => ({ status: 'ready', provider, note, target, url: plain ? url : '', items, tables, message: '' }))
+      await update($, openDb, () => ({ status: 'ready', provider, note, target, url: plain ? url : '', items, tables, message: '', ref: isDbRef(url) ? url : '' }))
       if (!isDbRef(url)) void addToProject($, url)
       return
     }
@@ -486,7 +505,7 @@ async function openDatabase($: Host, raw: string) {
     // An older CLI: SQLite is read through sqlite_master.
     const out = await $.process.run(
       ['datatug', 'query', 'run', '--db', dbArg(url).arg, '--from', 'sqlite_master', '--no-policies', '--format', 'json'],
-      { cwd: await $.session.cwd(), timeoutMs: 20000, env: dbArg(url).env },
+      { cwd: await $.session.cwd(), timeoutMs: 20000, env: cliEnv(dbArg(url).env) },
     )
     const start = out.stdout.indexOf('[')
     if (out.exitCode !== 0 || start < 0) throw new ModError('could not open the database')
@@ -500,7 +519,7 @@ async function openDatabase($: Host, raw: string) {
     // A URL with no credentials or query also goes in state, so a table pressed after the mod
     // reloads still works. One with credentials lives in memory only.
     const plain = redact(url) === url
-    await update($, openDb, () => ({ status: 'ready', provider, note, target, url: plain ? url : '', items, message: '' }))
+    await update($, openDb, () => ({ status: 'ready', provider, note, target, url: plain ? url : '', items, message: '', ref: isDbRef(url) ? url : '' }))
     if (!isDbRef(url)) void addToProject($, url)
   } catch (err) {
     await update($, openDb, () => ({ status: 'error', provider, note, target, url: '', items: [], message: failure(err, 120) }))
@@ -525,7 +544,7 @@ async function countRows($: Host, items: OpenDbState['items'], url: string, run:
         if (t.name.startsWith('-')) throw new ModError('unsupported table name')
         const out = await $.process.run(
           ['datatug', 'query', 'run', '--db', dbArg(url).arg, '--from', t.name, '--no-policies', '--format', 'jsonl'],
-          { cwd, timeoutMs: 30000, env: dbArg(url).env },
+          { cwd, timeoutMs: 30000, env: cliEnv(dbArg(url).env) },
         )
         if (out.exitCode === 0) {
           rows = out.stdout.split('\n').filter(l => l.startsWith('{') && l.endsWith('}')).length
@@ -550,12 +569,12 @@ async function ensureSchema($: Host) {
 
 // The record of `table` whose `column` equals `value`: the rows are streamed as JSON lines and the
 // stream is cut at the first match. The CLI has no lookup by key yet.
-async function fetchReferenced($: Host, url: string, table: string, column: string, value: string): Promise<Record<string, unknown> | null> {
+async function fetchReferenced($: Host, url: string, table: string, column: string, value: string): Promise<{ obj: Record<string, unknown>; line: string } | null> {
   if (table.startsWith('-') || url === '') return null
   const child = $.process.spawn({
     argv: ['datatug', 'query', 'run', '--db', dbArg(url).arg, '--from', table, '--no-policies', '--format', 'jsonl'],
     cwd: await $.session.cwd(),
-    env: dbArg(url).env,
+    env: cliEnv(dbArg(url).env),
   })
   let buf = ''
   let seen = 0
@@ -570,7 +589,7 @@ async function fetchReferenced($: Host, url: string, table: string, column: stri
         if (++seen > 200000) return null
         try {
           const obj = JSON.parse(line) as Record<string, unknown>
-          if (String(obj[column]) === value) return obj
+          if (String(obj[column]) === value) return { obj, line }
         } catch {
           // a line that is not a record
         }
@@ -583,10 +602,10 @@ async function fetchReferenced($: Host, url: string, table: string, column: stri
 
 // Opens the record of `table` whose `column` equals `value` in the Record card; false when it is not found.
 async function openRecordByKey($: Host, db: string, table: string, column: string, value: string): Promise<boolean> {
-  const obj = await fetchReferenced($, db, table, column, value)
-  if (obj === null) return false
+  const found0 = await fetchReferenced($, db, table, column, value)
+  if (found0 === null) return false
   const id = `ref:${table}:${column}:${value}`
-  const parsed = parseRows(`[${JSON.stringify(obj)}]`, id, `datatug query run --from ${table}`)
+  const parsed = parseRows(`[${JSON.stringify(found0.obj)}]`, id, `datatug query run --from ${table}`)
   if (parsed === null) return false
   const found: GridResult = { ...parsed, collection: clean(table).slice(0, 80), total: 1, db }
   await update($, results, all => ({ ...Object.fromEntries(Object.entries(all).slice(-9)), [id]: found }))
@@ -607,7 +626,7 @@ async function openDbRecords($: Host, name: string, kept: string, known: number 
     const child = $.process.spawn({
       argv: ['datatug', 'query', 'run', '--db', dbArg(url).arg, '--from', name, '--no-policies', '--format', 'jsonl'],
       cwd: await $.session.cwd(),
-      env: dbArg(url).env,
+      env: cliEnv(dbArg(url).env),
     })
     const lines: string[] = []
     let buf = ''
@@ -627,7 +646,15 @@ async function openDbRecords($: Host, name: string, kept: string, known: number 
     const id = `db:${name}`
     const parsed = parseRows(`[${lines.join(',')}]`, id, 'datatug query run')
     if (parsed === null || lines.length === 0) throw new ModError('the table has no records')
-    const result: GridResult = { ...parsed, db: redact(url) === url ? url : '', collection: clean(name).slice(0, 80), total: Math.max(known ?? 0, lines.length), isTruncated: (known ?? 0) > lines.length }
+    const linkRef = (await read($, openDb)).ref ?? ''
+    const result: GridResult = {
+      ...parsed,
+      db: redact(url) === url ? url : '',
+      collection: clean(name).slice(0, 80),
+      total: Math.max(known ?? 0, lines.length),
+      isTruncated: (known ?? 0) > lines.length,
+      ...(linkRef !== '' ? { linkRef, lines } : {}),
+    }
     await update($, results, all => ({ ...Object.fromEntries(Object.entries(all).slice(-9)), [id]: result }))
     await update($, dbRecords, () => ({ name, status: 'ready', message: '', resultId: id, page: 0 }))
   } catch (err) {
@@ -653,38 +680,84 @@ async function loadDatabases($: Host, projectId: string | null, note = '') {
     const out = await $.process.run(['datatug', 'show', '--format', 'json', '--depth', 'sources', '--project', projectId], {
       cwd: await $.session.cwd(),
       timeoutMs: 15000,
+      env: cliEnv(),
     })
     if (out.exitCode !== 0) throw new ModError('datatug show failed')
     const doc = JSON.parse(out.stdout.slice(out.stdout.indexOf('{')))
     const items: DatabasesState['items'] = []
     for (const env of doc.environments ?? [])
       for (const src of env.sources ?? [])
-        if (items.length < 200) items.push({ env: clean(String(env.id)).slice(0, 60), id: clean(String(src.id)).slice(0, 80), driver: clean(String(src.driver ?? '')).slice(0, 40) })
+        if (items.length < 200) items.push({
+            env: clean(String(env.id)).slice(0, 60),
+            id: clean(String(src.id)).slice(0, 80),
+            driver: clean(String(src.driver ?? '')).slice(0, 40),
+            ...(typeof src.dsnEnv === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(src.dsnEnv) ? { dsnEnv: src.dsnEnv } : {}),
+          })
     await update($, databases, () => ({ projectId, status: 'ready', items, message: '', note }))
   } catch (err) {
     await update($, databases, () => ({ projectId, status: 'error', items: [], message: failure(err, 120), note }))
   }
 }
 
+// The id an opened database is added to a project under: its file name without the extension, or
+// its database name, as a plain name (letters, digits, `.`, `_` and `-`, starting with a letter or
+// a digit).
+export function sourceName(url: string): string {
+  const raw = dbName(redact(url)).replace(/\.[A-Za-z0-9]{1,8}$/, '')
+  const plain = raw.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 64)
+  return plain === '' ? 'db' : plain
+}
+
+// The path of a SQLite database to hand `db add`, which takes a SQLite file by its path: only an
+// absolute path with no credentials, query or fragment, else null (such a database is not added).
+export function sqlitePath(url: string): string | null {
+  const m = /^sqlite3?:\/\/(\/[^?#@\n\r]+)$/i.exec(url.trim())
+  return m === null ? null : m[1]
+}
+
 // Adds an opened database to the selected project through the CLI, unless it is already there,
-// then refreshes the list. The URL travels in an environment variable, never in the arguments.
+// then refreshes the list. A SQLite file is named by its path; any other URL travels in an
+// environment variable of its own (one per database, so two databases are never taken for one),
+// never in the arguments. Each database gets its own source id; a taken id gets a -2, -3, ... suffix.
 async function addToProject($: Host, url: string) {
   const sel = (await read($, project)).selected
   if (sel === null) return
+  const isSqlite = providerOf(url).startsWith('sqlite')
+  const path = isSqlite ? sqlitePath(url) : null
+  if (isSqlite && path === null) {
+    await loadDatabases($, sel, 'Not added to the project: a SQLite database is added by its file path, without credentials or options.')
+    return
+  }
+  const base = sourceName(url)
   try {
-    const out = await $.process.run(['datatug', 'db', 'add', '--project', sel, '--db', 'env:DATATUG_OPEN_DB', '--format', 'json'], {
-      cwd: await $.session.cwd(),
-      timeoutMs: 20000,
-      env: { DATATUG_OPEN_DB: url },
-    })
-    if (out.exitCode !== 0) {
-      const old = /unknown command|unknown flag|no such command|invalid command/i.test(`${out.stderr}${out.stdout}`)
-      await loadDatabases($, sel, old ? 'Adding to the project needs a newer datatug CLI.' : `Not added to the project (datatug exit code ${out.exitCode}).`)
+    for (let n = 1; n <= 5; n++) {
+      const name = n === 1 ? base : `${base.slice(0, 60)}-${n}`
+      const envName = `DATATUG_OPEN_DB_${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
+      const out = await $.process.run(['datatug', 'db', 'add', '--project', sel, '--db', path ?? `env:${envName}`, '--name', name, '--env', 'local', '--format', 'json'], {
+        cwd: await $.session.cwd(),
+        timeoutMs: 20000,
+        env: cliEnv(path === null ? { [envName]: url } : {}),
+      })
+      if (out.exitCode === 2 && /use another --name/i.test(`${out.stderr}`)) continue
+      if (out.exitCode !== 0) {
+        const old = /unknown command|unknown flag|no such command|invalid command/i.test(`${out.stderr}${out.stdout}`)
+        await loadDatabases($, sel, old ? 'Adding to the project needs a newer datatug CLI.' : `Not added to the project (datatug exit code ${out.exitCode}).`)
+        return
+      }
+      const res = JSON.parse(out.stdout.slice(out.stdout.indexOf('{'))) as { added?: boolean; dbRef?: string; id?: unknown; env?: unknown }
+      if (dbUrl === url) {
+        if (typeof res.dbRef === 'string' && isDbRef(res.dbRef)) dbPromptRef = res.dbRef.slice(0, 300)
+        // A link names this database only by the id and environment `db add` returned for it.
+        const plainId = (v: unknown) => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(v)
+        if (plainId(res.id) && plainId(res.env)) {
+          const ref = dbRef(sel, { id: res.id as string, env: res.env as string })
+          await update($, openDb, cur => (dbUrl === url ? { ...cur, ref, sourceEnv: path === null ? envName : undefined } : cur))
+        }
+      }
+      await loadDatabases($, sel, res.added === true ? 'Added to the project.' : 'Already in the project.')
       return
     }
-    const res = JSON.parse(out.stdout.slice(out.stdout.indexOf('{'))) as { added?: boolean; dbRef?: string }
-    if (typeof res.dbRef === 'string' && isDbRef(res.dbRef) && dbUrl === url) dbPromptRef = res.dbRef.slice(0, 300)
-    await loadDatabases($, sel, res.added === true ? 'Added to the project.' : 'Already in the project.')
+    await loadDatabases($, sel, 'Not added to the project: every name tried is taken by another database.')
   } catch {
     await loadDatabases($, sel, 'Could not add it to the project.')
   }
@@ -694,7 +767,7 @@ async function addToProject($: Host, url: string) {
 async function loadProjects($: Host) {
   await update($, projects, cur => ({ ...cur, status: 'loading' }))
   try {
-    const out = await $.process.run(['datatug', 'projects', '--format', 'json'], { cwd: await $.session.cwd(), timeoutMs: 15000 })
+    const out = await $.process.run(['datatug', 'projects', '--format', 'json'], { cwd: await $.session.cwd(), timeoutMs: 15000, env: cliEnv() })
     const data = out.exitCode === 0 ? JSON.parse(out.stdout.slice(out.stdout.indexOf('['))) : null
     if (!Array.isArray(data)) throw new ModError('datatug projects did not answer')
     const items = data
@@ -710,6 +783,80 @@ async function loadProjects($: Host) {
 }
 
 // The declared schema of the selected project, from the CLI: tables with their columns.
+// What one linked card asks `datatug daemon url` for.
+export type LinkReq = { kind: 'table' | 'records' | 'record'; db: string; table: string; schema?: string; isView?: boolean; limit?: number; key?: Record<string, unknown> }
+
+async function nowMs($: Host): Promise<number> {
+  try {
+    return await $.clock.now()
+  } catch {
+    return Date.now()
+  }
+}
+
+// Whether the mod runs in a terminal reached over SSH, where a link would open on another machine.
+// When the environment cannot be read, the same machine cannot be established either.
+async function overSsh($: Host): Promise<boolean> {
+  try {
+    const a = await $.env.get('SSH_CONNECTION')
+    const b = await $.env.get('SSH_TTY')
+    return (a ?? '') !== '' || (b ?? '') !== ''
+  } catch {
+    return true
+  }
+}
+
+const reqId = (req: LinkReq): string | null => {
+  const args = urlArgs(req)
+  return args === null ? null : fingerprint(JSON.stringify(args))
+}
+
+// Asks the CLI for one card's link (`daemon status` for the port, then `daemon url`; neither starts
+// the daemon or sends it a request) and keeps what the checks allow. Called once the card's own data
+// call has resolved; again when the link is older than LINK_TTL_MS, and on "Check again".
+async function fetchLink($: Host, card: string, req: LinkReq, force: boolean) {
+  const args = urlArgs(req)
+  if (args === null) return
+  const id = fingerprint(JSON.stringify(args))
+  if (fetching.get(card) === id) return
+  const cur = (await read($, links))[card]
+  const t = await nowMs($)
+  if (!force && cur !== undefined && cur.req === id && cur.status !== 'checking' && cur.isStale !== true && t - cur.at < LINK_TTL_MS) return
+  fetching.set(card, id)
+  hrefs.delete(card)
+  try {
+    await update($, links, all => ({ ...all, [card]: { req: id, status: 'checking', at: t } }))
+    let next: { status: LinkState['status']; href?: string }
+    if (cliVersion !== undefined && cliVersion !== null && isOlder(cliVersion, parseVersion(LINK_MIN_CLI_VERSION) as number[])) {
+      next = { status: 'old-cli' }
+    } else {
+      const cwd = await $.session.cwd()
+      const run = (argv: string[]) =>
+        $.process
+          .run(['datatug', ...argv], { cwd, timeoutMs: 10000, env: cliEnv() })
+          .then(r => ({ exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr ?? '' }))
+          .catch(() => null)
+      const status = await run(STATUS_ARGS)
+      next = readLink(status, status === null ? null : await run(args), req.kind, devOrigin)
+    }
+    const at = await nowMs($)
+    if (next.status === 'ok' && next.href !== undefined) hrefs.set(card, { req: id, href: next.href })
+    await update($, links, all => (all[card]?.req === id ? { ...all, [card]: { req: id, status: next.status, at } } : all))
+    // Once the link is old the card is drawn again, which asks the CLI again.
+    try {
+      $.clock.after(LINK_TTL_MS, () => {
+        void update($, links, all => (all[card]?.req === id && all[card]?.at === at ? { ...all, [card]: { ...(all[card] as LinkState), isStale: true } } : all))
+      })
+    } catch {
+      // no timer here: the next drawing checks the age
+    }
+  } catch {
+    await update($, links, all => (all[card]?.req === id ? { ...all, [card]: { req: id, status: 'unavailable', at: t } } : all)).catch(() => undefined)
+  } finally {
+    if (fetching.get(card) === id) fetching.delete(card)
+  }
+}
+
 async function loadSchema($: Host, projectId: string | null) {
   if (projectId === null) return
   await update($, schema, () => ({ projectId, status: 'loading', tables: [], message: '' }))
@@ -717,6 +864,7 @@ async function loadSchema($: Host, projectId: string | null) {
     const out = await $.process.run(['datatug', 'show', '--format', 'json', '--depth', 'columns', '--project', projectId], {
       cwd: await $.session.cwd(),
       timeoutMs: 20000,
+      env: cliEnv(),
     })
     if (out.exitCode !== 0) throw new ModError('datatug show failed')
     const doc = JSON.parse(out.stdout.slice(out.stdout.indexOf('{')))
@@ -759,7 +907,9 @@ async function loadSchema($: Host, projectId: string | null) {
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // A development web UI host is used only when the person named one in the plugin's settings.
+  devOrigin = parseDevHost((options as Record<string, unknown> | undefined)?.webDevHost)
   // The plugin has one hooks module: it adds the project pane (hooks/project.js), which registers
   // `/datatug` and answers `/datatug project`; this module answers plain `/datatug` with the panel.
   registerProject(on)
@@ -771,13 +921,14 @@ export const register: Register = on => {
     dbPromptRef = ''
     const cwd = await $.session.cwd()
     const version = await $.process
-      .run(['datatug', ...VERSION_ARGS], { cwd, timeoutMs: 15000 })
+      .run(['datatug', ...VERSION_ARGS], { cwd, timeoutMs: 15000, env: cliEnv() })
       .then(r => ({ isStarted: true, stdout: r.stdout }))
       .catch(() => ({ isStarted: false, stdout: '' }))
     if (!version.isStarted) return { text: missingCliText() }
     // A version that cannot be read is a development build: let it through.
     const found = parseVersion(version.stdout)
     if (found !== null && isOlder(found, parseVersion(MIN_CLI_VERSION) as number[])) return { text: tooOldText(found.join('.')) }
+    cliVersion = found
     // Where nothing shows panes (`claude -p`, the VS Code chat), say so and name the text view.
     const surfaces = await $.session.surfaces().catch(() => null)
     if (surfaces !== null && !canDrawPane(surfaces)) return { text: NO_PANE_TEXT }
@@ -885,7 +1036,7 @@ export const register: Register = on => {
   // The side panel: two cards that are always there (project, context bag) and
   // optional ones that appear on demand (the record card).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Input } = $.ui.resolve(e)
+    const { Box, Text, Button, Input, Link } = $.ui.resolve(e)
     const all = await read($, results)
     const v = await read($, view)
     const ps = await read($, projects)
@@ -1048,6 +1199,69 @@ export const register: Register = on => {
     // Databases: the project's databases and the form that opens another one; an opened database
     // is added to the project (when it is not there yet) and the list refreshes.
     const dbs = await read($, databases)
+
+    // "Open in DataTug": one line under a linked card, drawn once the card's own data has loaded. It is
+    // the link `datatug daemon url` printed and the mod checked, or one line saying why there is none,
+    // and always "Check again". `pre` is a reason known without asking the CLI.
+    const isHere = isSameHost(e.surface, await overSsh($ as Host))
+    const allLinks = await read($, links)
+    const linkTime = await nowMs($ as Host)
+    const envOf = (ref: string): string | undefined => {
+      const m = /^datatug:\/\/[^/?#]*\/([^/?#]+)(?:\?env=([^&#]+))?$/.exec(ref)
+      const dec = (x: string | undefined) => {
+        try {
+          return x === undefined ? undefined : decodeURIComponent(x)
+        } catch {
+          return x
+        }
+      }
+      const id = dec(m?.[1])
+      const env = dec(m?.[2])
+      const src = dbs.items.find(d => d.id === id && (env === undefined || d.env === env))
+      return src?.dsnEnv ?? (ref === od.ref ? od.sourceEnv : undefined)
+    }
+    const linkRow = (card: string, pre: string | null, req: LinkReq | null) => {
+      const id = req === null ? null : reqId(req)
+      if (pre === null && id === null) return null
+      const recheck = () => {
+        hrefs.delete(card)
+        void update($, links, all => Object.fromEntries(Object.entries(all).filter(([k]) => k !== card))).then(() => {
+          if (pre === null && req !== null) return fetchLink($ as Host, card, req, true)
+        })
+      }
+      let body
+      if (pre !== null) body = <Text dimColor>{pre}</Text>
+      else {
+        const st = allLinks[card]
+        const fresh = st !== undefined && st.req === id && st.status !== 'checking' && st.isStale !== true && linkTime - st.at < LINK_TTL_MS
+        const held = hrefs.get(card)
+        if (!fresh || (st.status === 'ok' && held?.req !== id)) void fetchLink($ as Host, card, req as LinkReq, st !== undefined && st.status === 'ok' && held?.req !== id)
+        body =
+          fresh && st.status === 'ok' && held?.req === id ? (
+            <Link key={`link:${card}`} href={held.href} label="Open in DataTug ↗" />
+          ) : (
+            <Text dimColor>{MESSAGES[fresh && st.status !== 'ok' ? st.status : 'checking']}</Text>
+          )
+      }
+      return (
+        <Box key={`link-row:${card}`} flexDirection="row" gap={1} alignItems="center">
+          {body}
+          <Button key={`link-check:${card}`} plain onPress={recheck}>
+            Check again
+          </Button>
+        </Box>
+      )
+    }
+    // Why a card of the opened database has no link before the CLI is asked, or null.
+    const dbLinkBlock = (): string | null => {
+      const ref = od.ref ?? ''
+      if (ref === '') return MESSAGES['not-in-project']
+      const name = envOf(ref)
+      if (name !== undefined) return sourceUnavailableText(name)
+      return isHere ? null : MESSAGES['same-host']
+    }
+    // The schema a link names: none for SQLite, which has no schemas, else the declared one.
+    const linkSchema = (name: string) => (od.provider.startsWith('sqlite') ? undefined : findTable(sch.tables, name)?.schema || undefined)
     const openCard = (
       <Box key="card-opendb" {...card}>
         <Text bold>Databases</Text>
@@ -1196,6 +1410,11 @@ export const register: Register = on => {
         name: Math.min(30, Math.max(6, ...refs.map(r => r.table.name.length)) + 2),
         col: Math.min(30, Math.max(8, ...refs.map(r => r.fk.columns.join(', ').length)) + 2),
       }
+      const tableBlock = dbLinkBlock()
+      const tableLink =
+        dt.status === 'ready' && od.status === 'ready'
+          ? linkRow('table', tableBlock, tableBlock === null ? { kind: 'table', db: od.ref ?? '', table: dt.name, schema: linkSchema(dt.name), isView: kind === 'view' } : null)
+          : null
       dbTableCard = (
         <Box key="card-opendb-table" {...card}>
           <Box justifyContent="space-between" alignItems="center">
@@ -1215,6 +1434,7 @@ export const register: Register = on => {
             <Text bold dimColor>Database </Text>
             {clean(`${od.provider} · ${od.target}`)}
           </Text>
+          {tableLink}
           <Box flexDirection="row" gap={1} alignItems="center">
             <Text bold dimColor>Rows</Text>
             <Text bold>{item?.counting === true ? '…' : item?.rows === undefined ? '—' : item.rows === null ? 'n/a' : `${item.atLeast ? '≥' : ''}${item.rows}`}</Text>
@@ -1428,6 +1648,17 @@ export const register: Register = on => {
           </Box>
         )
       }
+      const recordsBlock = dbLinkBlock()
+      const recordsLink =
+        dr.status === 'ready' && recResult !== undefined
+          ? linkRow(
+              'records',
+              recordsBlock,
+              recordsBlock === null
+                ? { kind: 'records', db: od.ref ?? '', table: dr.name, schema: linkSchema(dr.name), isView: od.items.find(i => i.name === dr.name)?.kind === 'view', limit: TOP }
+                : null,
+            )
+          : null
       recordsCard = (
         <Box key="card-dbrecords" {...card}>
           <Box justifyContent="space-between" alignItems="center">
@@ -1451,6 +1682,7 @@ export const register: Register = on => {
               {iconButton('dbrecords-close', '✕', 'Close', () => update($, dbRecords, () => NO_RECORDS))}
             </Box>
           </Box>
+          {recordsLink}
           {body()}
         </Box>
       )
@@ -1590,18 +1822,36 @@ export const register: Register = on => {
       const openReferenced = async (fk: SchemaFk, name: string) => {
         const refCol = fk.refColumns[0]
         const value = cell(row[name])
-        const obj = await fetchReferenced($ as Host, result.db ?? '', fk.refTable, refCol, value)
-        if (obj === null) {
+        const got = await fetchReferenced($ as Host, result.db ?? '', fk.refTable, refCol, value)
+        if (got === null) {
           void $.ui.toast(`No ${clean(fk.refTable)} record with ${clean(refCol)} = ${value.slice(0, 40)}`)
           return
         }
         const id = `ref:${fk.refTable}:${refCol}:${value}`
-        const parsed = parseRows(`[${JSON.stringify(obj)}]`, id, `datatug query run --from ${fk.refTable}`)
+        const parsed = parseRows(`[${JSON.stringify(got.obj)}]`, id, `datatug query run --from ${fk.refTable}`)
         if (parsed === null) return
-        const refResult: GridResult = { ...parsed, collection: clean(fk.refTable).slice(0, 80), total: 1, db: result.db ?? '' }
+        // A record reached from a project database keeps that database's reference for its link.
+        const refResult: GridResult = {
+          ...parsed,
+          collection: clean(fk.refTable).slice(0, 80),
+          total: 1,
+          db: result.db ?? '',
+          ...(result.linkRef !== undefined ? { linkRef: result.linkRef, lines: [got.line] } : {}),
+        }
         await update($, results, all => ({ ...Object.fromEntries(Object.entries(all).slice(-9)), [id]: refResult }))
         await update($, view, cur => ({ ...cur, trail: [...(cur.trail ?? []), { current: result.id, selected: index }].slice(-10), current: id, selected: 0, column: null, showTable: false, tableName: null }))
         void $.ui.scroll({ to: { key: 'card-record' }, in: PANE, block: 'start' }).catch(() => undefined)
+      }
+      // A record of a project database links to its record view by its declared primary key; a row of a
+      // chat grid has no project, database or table identity, so it gets no line at all.
+      let recordLink = null
+      if (result.linkRef !== undefined) {
+        const pkCols = (recTable?.columns ?? []).filter(c => c.pk !== null).sort((a, b) => (a.pk as number) - (b.pk as number)).map(c => c.name)
+        const key = recordKey(pkCols, result.lines?.[index])
+        const srcEnv = envOf(result.linkRef)
+        const pre = srcEnv !== undefined ? sourceUnavailableText(srcEnv) : 'why' in key ? `No record link: ${key.why}` : isHere ? null : MESSAGES['same-host']
+        const schemaOf = recTable === undefined || recTable.driver.startsWith('sqlite') ? undefined : recTable.schema || undefined
+        recordLink = linkRow('record', pre, pre === null && 'key' in key ? { kind: 'record', db: result.linkRef, table: result.collection, schema: schemaOf, key: key.key } : null)
       }
       recordCard = (
         <Box key="card-record" {...card}>
@@ -1630,6 +1880,7 @@ export const register: Register = on => {
               {iconButton('last-row', '⏭', 'Last row', () => update($, view, cur => ({ ...cur, selected: result.rows.length - 1 })))}
             </Box>
           </Box>
+          {recordLink}
           {orderSwitch('record', recTable !== undefined)}
           <Box flexDirection="column" gap={1}>
             {fields.map((name, i) => (

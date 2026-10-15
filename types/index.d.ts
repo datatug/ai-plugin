@@ -2,6 +2,11 @@ export type GridResult = {
   id: string
   collection: string
   db?: string
+  // The datatug:// reference of the project database the rows came from (Record links); absent for
+  // a chat grid.
+  linkRef?: string
+  // The rows as the CLI printed them, one JSON object each, read for key values without rounding.
+  lines?: string[]
   command: string
   columns: string[]
   types: Record<string, string>
@@ -76,12 +81,17 @@ export type OpenDbState = {
   items: { name: string; kind: string; rows?: number | null; atLeast?: boolean; counting?: boolean }[]
   tables?: SchemaTable[]
   message: string
+  // The project reference of the opened database: the one it was opened by, or the one `db add`
+  // returned for it. Empty until the database is in a project.
+  ref?: string
+  // The environment variable a PostgreSQL source of the project names for its URL.
+  sourceEnv?: string
 }
 
 export type DatabasesState = {
   projectId: string | null
   status: 'idle' | 'loading' | 'ready' | 'error'
-  items: { env: string; id: string; driver: string }[]
+  items: { env: string; id: string; driver: string; dsnEnv?: string }[]
   message: string
   note: string
 }
@@ -103,6 +113,14 @@ export type DbRecordsState = {
 
 export type Bag = { isEnabled: boolean; entries: BagEntry[] }
 
+// What a linked card shows: a link (status ok, its href kept in memory only) or one of the messages.
+export type LinkState = {
+  req: string
+  status: 'checking' | 'ok' | 'down' | 'pending' | 'old-cli' | 'dev' | 'unavailable'
+  at: number
+  isStale?: boolean
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'datatug': { results: Record<string, GridResult>; view: GridView; shownRows: Record<string, number>
@@ -115,6 +133,7 @@ declare module 'claude-code' {
     dbTable: DbTableState
     columnOrder: 'defined' | 'alpha' | 'type'
     dbRecords: DbRecordsState
+    links: Record<string, LinkState>
   }
   }
 }

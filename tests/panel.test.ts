@@ -699,13 +699,38 @@ test('Databases lists the project databases and an opened one is added to the pr
   let d = JSON.stringify(await pane.drawn())
   expect(d).toContain('chinook-local')
   expect(d.includes('dbs:local:x')).toBe(false)
-  await pane.input({ key: 'opendb-input', text: 'sqlite://user:s3cret@/tmp/x.db', kind: 'submit' } as never)
+  await pane.input({ key: 'opendb-input', text: 'sqlite:///tmp/x.db', kind: 'submit' } as never)
   d = JSON.stringify(await pane.drawn())
   expect(d).toContain('dbs:local:x')
   expect(d).toContain('Added to the project.')
+  // `db add` takes a SQLite file by its path, under a source id of its own.
   const call = seen.find(x => x.includes('"add"')) ?? ''
-  expect(call).toContain('env:DATATUG_OPEN_DB')
-  expect(call.includes('s3cret') && !call.includes('"env"')).toBe(false)
+  expect(call).toContain('"--db","/tmp/x.db","--name","x","--env","local"')
+  expect(call.includes('env:DATATUG_OPEN_DB')).toBe(false)
+})
+
+test('a SQLite database with credentials or options is not added to the project', async ($, on) => {
+  const seen: string[] = []
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('session.cwd', () => ({ value: '/work' }) as never)
+  on('process.run', (_$, e) => {
+    const j = JSON.stringify(e)
+    seen.push(j)
+    let stdout = '[{"id":"p1","title":"","origin":""}]'
+    if (j.includes('sqlite_master')) stdout = '[{"name":"Album","type":"table"}]'
+    else if (j.includes('"show"')) stdout = JSON.stringify({ environments: [] })
+    return { value: { exitCode: 0, stdout, stderr: '' } } as never
+  })
+  on('ui.render', ($, e) => h($.ui.resolve(e).Text, {}, 'bottom') as never)
+  await $.command.run({ command: 'datatug', args: '' } as never)
+  const pane = await $.ui.mount({
+    plugin: 'datatug', surface: 'terminal', component: 'Pane', requestId: 'datatug', props: { bodyColumns: 80 },
+  } as never)
+  await pane.input({ key: 'opendb-input', text: 'sqlite://user:s3cret@/tmp/x.db', kind: 'submit' } as never)
+  const d = JSON.stringify(await pane.drawn())
+  expect(d).toContain('Not added to the project')
+  expect(d.includes('s3cret')).toBe(false)
+  expect(seen.some(x => x.includes('"add"'))).toBe(false)
 })
 
 test('a database listed in Databases opens by its project reference and shows the Database card', async ($, on) => {
