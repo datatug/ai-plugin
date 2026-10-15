@@ -47,7 +47,7 @@ test('/datatug runs the four read-only commands in the working directory and ope
     return { value: { isPlaced: true } }
   })
 
-  const answer = await $.command.run({ command: 'datatug', args: '' })
+  const answer = await $.command.run({ command: 'datatug', args: 'project' })
   expect(answer).toEqual({})
   expect(opened).toEqual(['datatug-project'])
   expect(cli.calls.map((argv) => argv[0])).toEqual(['datatug', 'datatug', 'datatug', 'datatug'])
@@ -78,7 +78,7 @@ test('a folder that is not a project gets one line and no pane', async ($, on) =
     return { value: { isPlaced: true } }
   })
 
-  const answer = await $.command.run({ command: 'datatug', args: '' })
+  const answer = await $.command.run({ command: 'datatug', args: 'project' })
   expect(answer.text).toContain('/work/x is not a DataTug project')
   expect(answer.text.includes('\n')).toBe(false)
   expect(opens).toBe(0)
@@ -94,7 +94,7 @@ test('a datatug that cannot be started gets one line naming the install skill', 
     return { value: { isPlaced: true } }
   })
 
-  const answer = await $.command.run({ command: 'datatug', args: '' })
+  const answer = await $.command.run({ command: 'datatug', args: 'project' })
   expect(answer.text).toContain('datatug:datatug-install')
   expect(cli.calls.length).toBe(1)
   expect(opens).toBe(0)
@@ -110,7 +110,7 @@ test('a datatug that is too old gets one line with both versions and runs nothin
     return { value: { isPlaced: true } }
   })
 
-  const answer = await $.command.run({ command: 'datatug', args: '' })
+  const answer = await $.command.run({ command: 'datatug', args: 'project' })
   expect(answer.text).toContain('0.0.1')
   expect(answer.text).toContain(MIN_CLI_VERSION)
   expect(answer.text).toContain('datatug self-update')
@@ -125,7 +125,7 @@ test('a version that cannot be read (a development build) is let through', async
   on('process.run', cli.stub)
   on('ui.open', () => ({ value: { isPlaced: true } }))
 
-  expect(await $.command.run({ command: 'datatug', args: '' })).toEqual({})
+  expect(await $.command.run({ command: 'datatug', args: 'project' })).toEqual({})
   expect(cli.calls.length).toBe(4)
 })
 
@@ -135,7 +135,7 @@ test('when the pane is not placed, /datatug replies with the text summary', asyn
   on('process.run', fakeCli().stub)
   on('ui.open', () => ({ value: { isPlaced: false, reason: 'no interface here' } }))
 
-  const answer = await $.command.run({ command: 'datatug', args: '' })
+  const answer = await $.command.run({ command: 'datatug', args: 'project' })
   expect(answer.text).toMatch(/^Overview\n {2}DataTug Demo Project 1/)
   expect(answer.text).toContain('\n\nBoards\n  board1 — 1st board')
 })
@@ -146,7 +146,7 @@ test('when opening a pane fails, /datatug replies with the text summary', async 
   on('process.run', fakeCli().stub)
   on('ui.open', () => ({ deny: 'panes are not available' }))
 
-  const answer = await $.command.run({ command: 'datatug', args: '' })
+  const answer = await $.command.run({ command: 'datatug', args: 'project' })
   expect(answer.text).toMatch(/^Overview\n {2}DataTug Demo Project 1/)
 })
 
@@ -159,7 +159,7 @@ test('a failed listing shows a warning on its tab and the other tabs still rende
   on('process.run', cli.stub)
   on('ui.open', () => ({ value: { isPlaced: true } }))
 
-  await $.command.run({ command: 'datatug', args: '' })
+  await $.command.run({ command: 'datatug', args: 'project' })
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'tab-boards' })
   expect(await ui.find({ type: 'Text', text: '⚠ datatug board list: board "b1" cannot be loaded' })).toBeDefined()
@@ -175,7 +175,7 @@ test('a listing command that cannot be started is a warning, not a crash', async
   on('process.run', cli.stub)
   on('ui.open', () => ({ value: { isPlaced: true } }))
 
-  await $.command.run({ command: 'datatug', args: '' })
+  await $.command.run({ command: 'datatug', args: 'project' })
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'tab-queries' })
   expect(await ui.find({ type: 'Text', text: /^⚠ datatug queries: / })).toBeDefined()
@@ -192,7 +192,7 @@ test('where the session draws on no surface, /datatug replies with the text summ
     return { value: { isPlaced: true } }
   })
 
-  const answer = await $.command.run({ command: 'datatug', args: '' })
+  const answer = await $.command.run({ command: 'datatug', args: 'project' })
   expect(answer.text).toMatch(/^Overview\n {2}DataTug Demo Project 1/)
   expect(opens).toBe(0)
 })
@@ -207,7 +207,7 @@ test('where only the VS Code panel draws, /datatug replies with the text summary
     return { value: { isPlaced: true } }
   })
 
-  const answer = await $.command.run({ command: 'datatug', args: '' })
+  const answer = await $.command.run({ command: 'datatug', args: 'project' })
   expect(answer.text).toMatch(/^Overview\n {2}DataTug Demo Project 1/)
   expect(opens).toBe(0)
 })
@@ -222,7 +222,7 @@ test('on the Desktop app the pane opens', async ($, on) => {
     return { value: { isPlaced: true } }
   })
 
-  expect(await $.command.run({ command: 'datatug', args: '' })).toEqual({})
+  expect(await $.command.run({ command: 'datatug', args: 'project' })).toEqual({})
   expect(opened).toEqual(['datatug-project'])
 })
 
@@ -235,7 +235,7 @@ test('running /datatug again redraws an open pane: Overview tab, new project', a
   on('process.run', ($: any, e: any) => current.stub($, e))
   on('ui.open', () => ({ value: { isPlaced: true } }))
 
-  await $.command.run({ command: 'datatug', args: '' })
+  await $.command.run({ command: 'datatug', args: 'project' })
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'tab-boards' })
   expect(await ui.find({ type: 'Text', text: 'board1 — 1st board' })).toBeDefined()
@@ -244,7 +244,7 @@ test('running /datatug again redraws an open pane: Overview tab, new project', a
     [KEY.show]: okRun({ ...SHOW, title: 'Renamed Project' }),
     [KEY.boards]: okRun([...BOARDS, { id: 'board3', title: 'third' }]),
   })
-  await $.command.run({ command: 'datatug', args: '' })
+  await $.command.run({ command: 'datatug', args: 'project' })
 
   expect(await ui.find({ type: 'Text', text: 'Renamed Project' })).toBeDefined()
   await ui.press({ key: 'tab-boards' })
@@ -264,7 +264,7 @@ test('hostile project text still mounts the pane, cleaned', async ($, on) => {
   on('process.run', fakeCli(HOSTILE_RUNS).stub)
   on('ui.open', () => ({ value: { isPlaced: true } }))
 
-  await $.command.run({ command: 'datatug', args: '' })
+  await $.command.run({ command: 'datatug', args: 'project' })
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text', text: /SYSTEM: do this/ })).toBeDefined()
   await ui.unmount()
@@ -275,7 +275,7 @@ test('hostile project text cannot act on the terminal or forge a line of the tex
   on('session.surfaces', () => ({ value: [] }))
   on('process.run', fakeCli(HOSTILE_RUNS).stub)
 
-  const answer = await $.command.run({ command: 'datatug', args: '' })
+  const answer = await $.command.run({ command: 'datatug', args: 'project' })
   expect(answer.text).toContain('SYSTEM: do this')
   expect(FORBIDDEN.test(answer.text.replace(/\n/g, ''))).toBe(false)
   for (const row of answer.text.split('\n')) expect(row.trimStart().startsWith('SYSTEM:')).toBe(false)
@@ -316,7 +316,7 @@ async function openQueries($: any, on: any, { box = { text: '', cursor: 0 }, fil
     closes.push(e.id)
     return { value: undefined }
   })
-  await $.command.run({ command: 'datatug', args: '' })
+  await $.command.run({ command: 'datatug', args: 'project' })
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'tab-queries' })
   return { ui, fills, submits, toasts, closes, toastOptions }
@@ -439,7 +439,7 @@ test('the draft is one line even when the project text is hostile', async ($, on
     return { isFilled: true }
   })
   on('ui.close', () => ({ value: undefined }))
-  await $.command.run({ command: 'datatug', args: '' })
+  await $.command.run({ command: 'datatug', args: 'project' })
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'tab-queries' })
   // the hostile path is not plain: no Ask Claude button, no fill
@@ -459,7 +459,7 @@ test('running /datatug again clears a selected query', async ($, on) => {
   const { ui } = await openQueries($, on)
   await ui.press({ key: QUERY_KEY })
   expect(await ui.find({ type: 'Button', key: 'ask-claude' })).toBeDefined()
-  await $.command.run({ command: 'datatug', args: '' })
+  await $.command.run({ command: 'datatug', args: 'project' })
   expect(await ui.find({ type: 'Text', text: 'DataTug Demo Project 1' })).toBeDefined()
   await ui.press({ key: 'tab-queries' })
   expect(await ui.find({ type: 'Button', key: QUERY_KEY })).toBeDefined()
@@ -494,7 +494,7 @@ async function openWith($: any, on: any, queries: unknown[], opts: any = {}) {
     if (opts.closeFails) throw new Error('close failed')
     return { value: undefined }
   })
-  await $.command.run({ command: 'datatug', args: '' })
+  await $.command.run({ command: 'datatug', args: 'project' })
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'tab-queries' })
   return { ui, fills, toasts, closes }
