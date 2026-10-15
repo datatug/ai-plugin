@@ -257,6 +257,51 @@ test('the rows file is emptied when the command failed, and the folder is checke
   })
   const ran = await $.tool.call({ tool: 'Bash', tool_use_id: 'q9', command: 'datatug query run --db x --from y' } as never)
   expect(writes).toHaveLength(1)
-  expect(command).toContain("umask 077 && mkdir -p -m 700 '/tmp/datatug-claude-mod' && chmod 700 '/tmp/datatug-claude-mod' && [ -O '/tmp/datatug-claude-mod' ] && [ ! -L '/tmp/datatug-claude-mod' ]")
+  expect(command).toContain("umask 077 && mkdir -p -m 700 '/tmp/datatug-claude-mod' && [ ! -L '/tmp/datatug-claude-mod' ] && [ -O '/tmp/datatug-claude-mod' ] && chmod 700 '/tmp/datatug-claude-mod'")
   expect(JSON.stringify(ran).includes('SECRET')).toBe(false)
+})
+
+import { dbName, isDbRef } from '../hooks/register'
+
+test('redact shows only a known harmless shape and hides every other connection string', () => {
+  for (const u of [
+    'jdbc:sqlserver://h;password=S3cret',
+    'sqlserver://h:1433;password=S3cret',
+    'postgres://h/db;password=S3cret',
+    'postgres:host=h password=S3cret',
+    'postgres://u:S3cret',
+    'mysql://u:pa ss@h/db',
+    'postgres://h/db?password=S3cret',
+  ]) {
+    const shown = redact(u)
+    expect(shown.includes('S3cret') || shown.includes('pa ss')).toBe(false)
+    expect(redact(u) === u).toBe(false)
+    expect(dbName(shown).includes('S3cret')).toBe(false)
+  }
+  expect(redact('postgres://db.example:5432/shop')).toBe('postgres://db.example:5432/shop')
+  expect(dbName('sqlserver://h:1433;password=S3cret')).toBe('database')
+})
+
+test('only a bare project reference is a reference', () => {
+  expect(isDbRef('datatug://p1/db?env=local')).toBe(true)
+  expect(isDbRef('datatug:///db')).toBe(true)
+  expect(isDbRef('datatug://u:pw@h/db')).toBe(false)
+  expect(isDbRef('datatug://p1/db?env=a b')).toBe(false)
+})
+
+test('scrub blanks passwords written as key=value, with spaces, or in a jdbc string', () => {
+  for (const t of ['mysql://u:pa ss@h/db', 'jdbc:sqlserver://h;password=S3cret', 'bad password=S3cret here', 'x postgres:host=h;pwd=S3cret']) {
+    const out = scrub(t)
+    expect(out.includes('S3cret') || out.includes('pa ss')).toBe(false)
+  }
+})
+
+test('a command with a trailing shell comment is left alone, so no redirect can be swallowed', async ($, on) => {
+  const commands: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_$: unknown, e: { command: string }) => {
+    commands.push(e.command)
+    return { result: { stdout: 'x', stderr: '' }, text: '', ref: {} } as never
+  })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'q5', command: 'datatug query run --db x --from t # note' } as never)
+  expect(commands).toEqual(['datatug query run --db x --from t # note'])
 })

@@ -70,7 +70,7 @@ const view = atom({ plugin: 'datatug', key: 'view' } as const, {
 } as GridView)
 
 const RUN = /\bdatatug\b[^|;&<>]*\bquery\s+run\b/
-const PLAIN = /[|;&<>$`()\n]/
+const PLAIN = /[|;&<>$`()\n\r#\\]/
 const NO_PANE_TEXT = 'The DataTug panel needs the terminal or the Desktop app. Run `/datatug project` for a text summary of the project in this folder.'
 const ROWS_DIR = 'datatug-claude-mod'
 
@@ -95,7 +95,10 @@ function clean(text: string): string {
 // A connection string anywhere in text (an error message that repeats `--db`, a stored command) is
 // blanked up to the last @ that follows it, so a password with an @ or a / in it cannot survive.
 export function scrub(text: string): string {
-  return stripUnsafe(text).replace(/[a-z][a-z0-9+.-]*:\/\/\S*@\S*/gi, '***')
+  return stripUnsafe(text)
+    .replace(/[a-z][a-z0-9+.-]*:\/\/[^\n]*@\S*|[a-z][a-z0-9+.-]*:\/\/\S*/gi, '***')
+    .replace(/\b[a-z][a-z0-9+.-]*:[a-z0-9_]+=\S*/gi, '***')
+    .replace(/\b(password|passwd|pwd|pass|secret|token|api_?key)\s*[=:]\s*[^\s;&]+/gi, '$1=***')
 }
 
 function cell(value: unknown): string {
@@ -321,16 +324,21 @@ let dbPromptRef = ''
 let openRun = 0
 
 // A connection string without its credentials or query: safe to show.
+// Only a string of a known harmless shape is shown or kept; anything else is hidden entirely.
+const SHOWN = /^[a-z][a-z0-9+.-]*:\/\/(\*\*\*@)?[A-Za-z0-9.-]*(:\d+)?(\/[^\s;=@?#]*)?$/i
 export function redact(url: string): string {
   if (isDbRef(url)) return url
-  // Up to the LAST @ is credentials, even when the password holds an @, a / or a ?: unparsable is hidden.
-  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/).*@/is, '$1***@').replace(/[?#].*$/s, '')
+  // Up to the LAST @ is credentials, even when the password holds an @, a / or a ?.
+  const cut = url.replace(/^([a-z][a-z0-9+.-]*:\/\/).*@/is, '$1***@').replace(/[?#].*$/s, '')
+  if (SHOWN.test(cut)) return cut
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url.trim())?.[1].toLowerCase()
+  return scheme === undefined ? '***' : `${scheme}://***`
 }
 
 // A project database reference (datatug://<project>/<db-id>[?env=<ENV>]) holds no credentials: it
 // is passed as written and is the one URL that may go into a prompt together with its query.
 export function isDbRef(url: string): boolean {
-  return /^datatug:\/\//i.test(url.trim())
+  return /^datatug:\/\/[^/?#@:\s]*\/[^/?#@:\s]+(\?[A-Za-z0-9_=&%.-]*)?$/i.test(url.trim())
 }
 
 // The reference of a database the project holds: what the CLI resolves back to its source.
@@ -347,8 +355,8 @@ export function dbArg(url: string): { arg: string; env: Record<string, string> }
 // What to call a database: its id in the project for a reference, else the file or database name
 // at the end of its address (never the credentials: the target is already redacted).
 export function dbName(target: string): string {
-  const ref = /^datatug:\/\/[^/?#]*\/([^/?#]+)/i.exec(target.trim())
-  const raw = ref !== null ? ref[1] : (/([^/\\?#]+)\/*(?:[?#].*)?$/.exec(target.trim().replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*@?/i, ''))?.[1] ?? target)
+  const ref = isDbRef(target) ? /^datatug:\/\/[^/?#]*\/([^/?#]+)/i.exec(target.trim()) : null
+  const raw = ref !== null ? ref[1] : (/([^/\\?#]+)\/*(?:[?#].*)?$/.exec(target.trim().replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*@?/i, ''))?.[1] ?? 'database')
   try {
     return decodeURIComponent(raw)
   } catch {
@@ -370,6 +378,11 @@ type Detected = { url: string; provider: string; note: string } | { error: strin
 
 // A connection string is used as written. A file path is recognised by its name (.sqlite, .db, ...)
 // or, failing that, by its first bytes: every SQLite file starts with "SQLite format 3".
+// A path is echoed only when it looks like one: text typed as a connection string without a scheme is not.
+function shownPath(path: string): string {
+  return /^[\w ./~+@-]+$/.test(path) && !path.includes('@') ? clean(path).slice(0, 160) : 'that path'
+}
+
 async function detectDatabase($: Host, raw: string): Promise<Detected> {
   const text = raw.trim()
   if (text === '') return { error: 'Enter a connection string or the path of a database file, for example sqlite:///path/to.db' }
@@ -377,11 +390,11 @@ async function detectDatabase($: Host, raw: string): Promise<Detected> {
   let path = text
   if (path.startsWith('~/')) path = `${(await $.env.get('HOME')) ?? ''}${path.slice(1)}`
   if (!path.startsWith('/')) path = `${await $.session.cwd()}/${path.replace(/^\.\//, '')}`
-  if (!(await $.fs.exists(path))) return { error: `No file at ${clean(path).slice(0, 160)}` }
+  if (!(await $.fs.exists(path))) return { error: `No file at ${shownPath(path)}` }
   if (SQLITE_FILE.test(path)) return { url: `sqlite://${path}`, provider: 'sqlite', note: 'from the file name' }
   const head = await $.process.run(['head', '-c', '16', path], { timeoutMs: 5000 })
   if (head.exitCode === 0 && head.stdout.startsWith('SQLite format 3')) return { url: `sqlite://${path}`, provider: 'sqlite', note: 'from the file content' }
-  return { error: `Could not tell what kind of database ${clean(path).slice(0, 160)} is. Use a connection string such as sqlite:///path/to.db` }
+  return { error: `Could not tell what kind of database ${shownPath(path)} is. Use a connection string such as sqlite:///path/to.db` }
 }
 
 type DeclaredTable = {
@@ -637,7 +650,7 @@ async function loadDatabases($: Host, projectId: string | null, note = '') {
         if (items.length < 200) items.push({ env: clean(String(env.id)).slice(0, 60), id: clean(String(src.id)).slice(0, 80), driver: clean(String(src.driver ?? '')).slice(0, 40) })
     await update($, databases, () => ({ projectId, status: 'ready', items, message: '', note }))
   } catch (err) {
-    await update($, databases, () => ({ projectId, status: 'error', items: [], message: err instanceof Error ? err.message.slice(0, 120) : 'failed', note }))
+    await update($, databases, () => ({ projectId, status: 'error', items: [], message: err instanceof Error ? scrub(err.message).slice(0, 120) : 'failed', note }))
   }
 }
 
@@ -680,7 +693,7 @@ async function loadProjects($: Host) {
     await update($, project, cur => ({ isOpen: false, selected: cur.selected !== null && items.some(i => i.id === cur.selected) ? cur.selected : (items[0]?.id ?? null) }))
     await loadDatabases($, (await read($, project)).selected)
   } catch (err) {
-    await update($, projects, () => ({ status: 'error', items: [], message: err instanceof Error ? err.message.slice(0, 120) : 'failed' }))
+    await update($, projects, () => ({ status: 'error', items: [], message: err instanceof Error ? scrub(err.message).slice(0, 120) : 'failed' }))
   }
 }
 
@@ -730,7 +743,7 @@ async function loadSchema($: Host, projectId: string | null) {
           }
     await update($, schema, () => ({ projectId, status: 'ready', tables, message: '' }))
   } catch (err) {
-    await update($, schema, () => ({ projectId, status: 'error', tables: [], message: err instanceof Error ? err.message.slice(0, 120) : 'failed' }))
+    await update($, schema, () => ({ projectId, status: 'error', tables: [], message: err instanceof Error ? scrub(err.message).slice(0, 120) : 'failed' }))
   }
 }
 
@@ -774,7 +787,7 @@ export const register: Register = on => {
     const dir = await rowsDir($ as Host)
     const file = `${dir}/${e.tool_use_id.replace(/[^A-Za-z0-9_-]/g, '_')}.json`
     // The folder must be ours and not a link before the rows are written, and the file is owner-only.
-    const command = `umask 077 && mkdir -p -m 700 '${dir}' && chmod 700 '${dir}' && [ -O '${dir}' ] && [ ! -L '${dir}' ] && ${e.command.trim()}${hasFormat ? '' : ' --format json'} > '${file}'`
+    const command = `umask 077 && mkdir -p -m 700 '${dir}' && [ ! -L '${dir}' ] && [ -O '${dir}' ] && chmod 700 '${dir}' && ${e.command.trim()}${hasFormat ? '' : ' --format json'} > '${file}'`
     // The rows go to a file, not through Bash's output (30000 characters, then cut).
     const ran = await next({ ...e, command })
     let stdout: string
@@ -1132,7 +1145,7 @@ export const register: Register = on => {
     const heldUrl = dbUrl !== '' ? dbUrl : od.url
     // A prompt names the database by its project reference, never by a connection string.
     const promptDb = isDbRef(heldUrl) ? heldUrl : dbPromptRef
-    const canDraft = promptDb !== '' && /^[A-Za-z0-9_][A-Za-z0-9_.$-]*$/.test(dt.name ?? '')
+    const canDraft = promptDb !== '' && /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(dt.name ?? '')
     let dbTableCard = null
     // The Table card and the Table records card take turns in the same place.
     if (dt.name !== null && (await read($, dbRecords)).name === null) {
