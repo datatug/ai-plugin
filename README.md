@@ -102,6 +102,18 @@ A change in the CLI surface typically produces a matching skill update in this r
 - [`synchestra`](https://github.com/synchestra-io/ai-plugin-synchestra)
 - [`ingitdb`](https://github.com/ingitdb/ingitdb-ai-skills)
 
+## Development
+
+Pull requests and pushes to `main` run `.github/workflows/ci.yml`. It has three checks, each runnable locally from the repository root:
+
+| Check | What it runs | Locally |
+| --- | --- | --- |
+| `mod` | `claude plugin validate . --strict` and `claude plugin test` (the mod tests in `tests/`), with Claude Code pinned in the workflow; needs no login or API key | `claude plugin validate . --strict` and `claude plugin test` |
+| `manifests` | Parses every manifest, checks that `name` and `version` agree and that every referenced path exists, and runs the checker's own tests | `node --test scripts/check-manifests.test.js && node scripts/check-manifests.js` |
+| `spec` | `specscore spec lint` on `spec/`, with specscore pinned in the workflow | `specscore spec lint` ([install](https://github.com/specscore/specscore-cli#install)) |
+
+When you bump the version, change it in every manifest; the `manifests` check fails if they differ.
+
 ## Releases
 
 Releases are tagged as `datatug--v<version>` on this repository to support Claude Code's dependency resolution.

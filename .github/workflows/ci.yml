@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Exact versions: bump deliberately. The mod needs Claude Code >= 2.1.287.
+  CLAUDE_CODE_VERSION: "2.1.301"
+  SPECSCORE_VERSION: "v0.55.0"
+
+jobs:
+  mod:
+    name: mod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+      - name: Install Claude Code
+        run: npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+      - name: Show versions
+        run: |
+          node --version
+          claude --version
+      # Neither command calls the model or needs a login or API key.
+      - name: Validate the plugin
+        run: claude plugin validate . --strict
+      - name: Test the mod
+        run: claude plugin test
+
+  manifests:
+    name: manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+      - name: Test the manifest checker
+        run: node --test scripts/check-manifests.test.js
+      - name: Check the manifests
+        run: node scripts/check-manifests.js
+
+  spec:
+    name: spec
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # specscore's docs: pin an exact released tag, never @main.
+      # The runner image ships Go.
+      - name: Install specscore
+        run: |
+          GOBIN="${RUNNER_TEMP}/bin" go install "github.com/specscore/specscore-cli/cmd/specscore@${SPECSCORE_VERSION}"
+          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+      - name: Lint the specs
+        run: |
+          specscore --version
+          specscore spec lint
