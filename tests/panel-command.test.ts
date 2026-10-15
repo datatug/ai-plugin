@@ -369,3 +369,25 @@ test('a command that throws still has its rows file emptied', async ($, on) => {
   await $.tool.call({ tool: 'Bash', tool_use_id: 'c2', command: 'datatug query run --db x --from y' } as never).catch(() => undefined)
   expect(writes).toEqual(['/tmp/datatug-claude-mod/c2.json'])
 })
+
+test('a user name or provider is never taken from a scheme-less string', () => {
+  expect(redact('admin:S3cret=x@tcp(h)/db')).toBe('***')
+  expect(redact('root:abc==@tcp(h:3306)/db').includes('root')).toBe(false)
+  expect(dbName(redact('root:abc==@tcp(h:3306)/db')).includes('root')).toBe(false)
+})
+
+test('a path with a secret-looking encoding or equals sign is not shown', () => {
+  expect(redact('postgres://host/db%3Bpassword%3Dsecret').includes('secret')).toBe(false)
+  expect(redact('https://host/v1/a=b').includes('a=b')).toBe(false)
+})
+
+test('datatug query run --help and run-all are not intercepted', async ($, on) => {
+  const commands: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_$: unknown, e: { command: string }) => {
+    commands.push(e.command)
+    return { result: { stdout: 'x', stderr: '' }, text: '', ref: {} } as never
+  })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'h1', command: 'datatug query run --help' } as never)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'h2', command: 'datatug query run-all' } as never)
+  expect(commands).toEqual(['datatug query run --help', 'datatug query run-all'])
+})

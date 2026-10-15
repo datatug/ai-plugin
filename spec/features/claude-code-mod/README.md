@@ -43,17 +43,17 @@ The project pane runs exactly these, each read-only, with no shell:
 
 These are specified in `datatug/datatug-cli` (`spec/features/cli/show`, `spec/features/cli/queries`, `spec/features/cli/board`). The mod requires the first `datatug` release that carries all three; that version is recorded as one constant in the mod and stated in this repository's README.
 
-The CLI resolves a project at the root of the working directory only, so `/datatug` shows a project when the session runs in the project's root folder. It does not search parent folders.
+The CLI resolves a project at the root of the working directory only, so `/datatug project` shows a project when the session runs in the project's root folder. It does not search parent folders.
 
 The project pane is read-only towards the project: it does not run queries, guard tool calls, edit project files, or read them. The panel reads tables and, on a person's press, registers an opened database as a source of the selected project through `datatug db add`, which writes through the CLI and never reads or writes a project file itself. Neither submits a prompt.
 
-Running `/datatug` again reloads the project and redraws an open pane. Text that comes from the project or from the CLI (titles, ids, types, drivers, error messages) is shown with control characters, bidirectional controls and line breaks replaced by spaces and long values cut short, so a project file cannot blank the pane, act on the terminal or forge a line of the reply. Each tab shows at most 200 rows and says how many more there are. The mod runs the `datatug` found first on the `PATH`.
+Running `/datatug project` again reloads the project and redraws an open pane. Text that comes from the project or from the CLI (titles, ids, types, drivers, error messages) is shown with control characters, bidirectional controls and line breaks replaced by spaces and long values cut short, so a project file cannot blank the pane, act on the terminal or forge a line of the reply. Each tab shows at most 200 rows and says how many more there are. The mod runs the `datatug` found first on the `PATH`.
 
 ### Picking a query
 
 On the Queries tab each query is a row that can be chosen with the keyboard. Choosing one opens that query's detail view in the pane: its title, its ID, its type and its parameters (each with its type, and marked when required), over a row of actions. **Ask Claude** puts a request to run the query into the prompt box as a draft and does not submit it, so the person can add details before sending. **Back** returns to the list. The action row is where running a query inside the pane will be added; this Feature does not run queries.
 
-The draft is one line: `Run the saved DataTug query <id>`, followed by ` with <P>=` for each required parameter joined by `, `, and ` (optional: <P>, <P>)` when there are optional ones. It carries no title and no other text from the project: only the query's ID and parameter names, and only plain names (letters, digits, `_`, `.` and `-`, up to 64 characters, not starting with `.` or `-`). A parameter whose id is not plain is shown in the detail view and left out of the draft. A query whose ID is not made of plain names (at most 16 segments, 200 characters in all) cannot be drafted: its detail view says so in place of the Ask Claude button, and Back stays. The draft names at most 10 required and 10 optional parameters and counts the rest (` (+N more required)`, `, +N more`), and is at most 500 characters. The detail view shows at most 20 parameters and then a count of the rest, below the actions, so the actions are always on screen. Queries beyond the 200-row cap cannot be chosen. It is appended to whatever the box already holds, after a space when that text does not end in one. When the box cannot take it (a dialog holds the keys, or the session has no box), the draft is shown in a toast instead. After the box takes it, the pane closes, which gives the keys back to the prompt box; `/datatug` opens it again.
+The draft is one line: `Run the saved DataTug query <id>`, followed by ` with <P>=` for each required parameter joined by `, `, and ` (optional: <P>, <P>)` when there are optional ones. It carries no title and no other text from the project: only the query's ID and parameter names, and only plain names (letters, digits, `_`, `.` and `-`, up to 64 characters, not starting with `.` or `-`). A parameter whose id is not plain is shown in the detail view and left out of the draft. A query whose ID is not made of plain names (at most 16 segments, 200 characters in all) cannot be drafted: its detail view says so in place of the Ask Claude button, and Back stays. The draft names at most 10 required and 10 optional parameters and counts the rest (` (+N more required)`, `, +N more`), and is at most 500 characters. The detail view shows at most 20 parameters and then a count of the rest, below the actions, so the actions are always on screen. Queries beyond the 200-row cap cannot be chosen. It is appended to whatever the box already holds, after a space when that text does not end in one. When the box cannot take it (a dialog holds the keys, or the session has no box), the draft is shown in a toast instead. After the box takes it, the pane closes, which gives the keys back to the prompt box; `/datatug project` opens it again.
 
 Parameters are those `datatug queries --format json` lists; with a `datatug` that lists none, the detail view and the draft carry none.
 
@@ -93,19 +93,19 @@ A `datatug query run` the model issues in one plain Bash command (no pipe, redir
 ### AC: pane-tabs
 
 **Given** a DataTug project and a `datatug` CLI of the required version
-**When** `/datatug` runs in the project's root folder in a session that can draw
+**When** `/datatug project` runs in the project's root folder in a session that can draw
 **Then** a pane shows the Overview, Environments, Queries and Boards tabs populated from the CLI's JSON output.
 
 ### AC: not-a-project
 
 **Given** a working directory for which `datatug show` exits `3`
-**When** `/datatug` runs
+**When** `/datatug project` runs
 **Then** it replies with one text line saying the folder is not a DataTug project and opens no pane.
 
 ### AC: cli-missing
 
 **Given** no `datatug` executable can be started
-**When** `/datatug` runs
+**When** `/datatug project` runs
 **Then** it replies with one text line that names the `datatug:datatug-install` skill and opens no pane.
 
 ### AC: cli-too-old
@@ -117,25 +117,25 @@ A `datatug query run` the model issues in one plain Bash command (no pipe, redir
 ### AC: text-fallback
 
 **Given** a session that draws on no surface that shows panes (`$.session.surfaces()` names neither `terminal` nor `desktop`; a `claude -p` run names none)
-**When** `/datatug` runs
+**When** `/datatug project` runs
 **Then** it replies with a plain-text summary of the four sections, and opens no pane.
 
 ### AC: failed-command-isolated
 
 **Given** a project where one of the three listing commands exits non-zero (for example a project file that `datatug show` cannot read, while the queries and boards are listed) and the folder is a project
-**When** `/datatug` runs
+**When** `/datatug project` runs
 **Then** the tabs that command feeds show a warning row carrying the command's name and the error message it printed, and the other tabs render normally.
 
 ### AC: rerun-refreshes-pane
 
 **Given** an open pane and a project that has changed
-**When** `/datatug` runs again
+**When** `/datatug project` runs again
 **Then** the pane shows the Overview tab with the changed project, without a key press.
 
 ### AC: project-text-is-sanitised
 
 **Given** a project whose titles or ids hold control characters, bidirectional controls or line breaks
-**When** `/datatug` runs
+**When** `/datatug project` runs
 **Then** the pane is drawn and the text summary is printed with those characters replaced by spaces, and no line of the reply begins with text taken from after a line break in a title.
 
 ### AC: query-detail
@@ -220,7 +220,7 @@ Running saved queries, denying or rewriting database tool calls beyond moving a 
 
 ## Verification Status
 
-Panel port, 2026-10-15, Claude Code 2.1.301 on macOS (arm64), `datatug` 0.84.1 installed: `claude plugin test` passes (167 tests across 10 files, the earlier 114 among them with `/datatug` changed to `/datatug project`, and the panel's 25 prototype tests); `claude plugin validate . --strict` passes. Live with the released `datatug` 0.84.1 in `chinook-demo`: `claude --plugin-dir . -p "/datatug"` prints the one line naming `/datatug project`, and `-p "/datatug project"` prints the text summary. Checked through the test kit only: the panel was not drawn in a live terminal or the Desktop app, and none of its cards was exercised against a live `datatug` in this port.
+Panel port, 2026-10-15, Claude Code 2.1.301 on macOS (arm64), `datatug` 0.84.1 installed: `claude plugin test` passes (170 tests across 10 files, the earlier 114 among them with `/datatug` changed to `/datatug project`, and the panel's 25 prototype tests); `claude plugin validate . --strict` passes. Live with the released `datatug` 0.84.1 in `chinook-demo`: `claude --plugin-dir . -p "/datatug"` prints the one line naming `/datatug project`, and `-p "/datatug project"` prints the text summary. Checked through the test kit only: the panel was not drawn in a live terminal or the Desktop app, and none of its cards was exercised against a live `datatug` in this port.
 
 Earlier verification, for the project pane:
 

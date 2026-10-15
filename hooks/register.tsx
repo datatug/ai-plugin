@@ -70,7 +70,7 @@ const view = atom({ plugin: 'datatug', key: 'view' } as const, {
 } as GridView)
 
 // `datatug ... query run` as the command itself: not the words inside a quoted argument of another command.
-const RUN = /^\s*(?:(?:env|time)\s+|[A-Za-z_]\w*=\S*\s+)*(?:\S*\/)?datatug(?:\s+[^\s'"]+)*?\s+query\s+run\b/
+const RUN = /^\s*(?:(?:env|time)\s+|[A-Za-z_]\w*=\S*\s+)*(?:\S*\/)?datatug(?:\s+[^\s'"]+)*?\s+query\s+run(?![\w-])(?!.*\s--?help\b)/
 const PLAIN = /[|;&<>$`()\n\r#\\]/
 const NO_PANE_TEXT = 'The DataTug panel needs the terminal or the Desktop app. Run `/datatug project` for a text summary of the project in this folder.'
 const ROWS_DIR = 'datatug-claude-mod'
@@ -89,6 +89,11 @@ async function rowsDir($: Host): Promise<string> {
 }
 
 // Control characters and line breaks would let a data value act on the terminal.
+// An error with a message this module wrote itself: the only kind whose text is shown. Anything else
+// (a failed spawn, a JSON error quoting CLI output) is shown as 'failed'.
+class ModError extends Error {}
+const failure = (err: unknown, max: number) => (err instanceof ModError ? scrub(err.message).slice(0, max) : 'failed')
+
 function clean(text: string): string {
   return stripUnsafe(text)
 }
@@ -327,13 +332,13 @@ let openRun = 0
 
 // A connection string without its credentials or query: safe to show.
 // Only a string of a known harmless shape is shown or kept; anything else is hidden entirely.
-const SHOWN = /^[a-z][a-z0-9+.-]*:\/\/(\*\*\*@)?[A-Za-z0-9.-]*(:\d+)?(\/[^\s;=@?#]*)?$/i
+const SHOWN = /^[a-z][a-z0-9+.-]*:\/\/(\*\*\*@)?[A-Za-z0-9.-]*(:\d+)?(\/[A-Za-z0-9._~\/ -]*)?$/i
 export function redact(url: string): string {
   if (isDbRef(url)) return url
   // Up to the LAST @ is credentials, even when the password holds an @, a / or a ?.
   const cut = url.replace(/^([a-z][a-z0-9+.-]*:\/\/).*@/is, '$1***@').replace(/[?#].*$/s, '')
   if (SHOWN.test(cut)) return cut
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url.trim())?.[1].toLowerCase()
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url.trim())?.[1].toLowerCase()
   return scheme === undefined ? '***' : `${scheme}://***`
 }
 
@@ -341,7 +346,7 @@ export function redact(url: string): string {
 // is passed as written and is the one URL that may go into a prompt together with its query.
 export function isDbRef(url: string): boolean {
   const part = String.raw`(?:[A-Za-z0-9._~-]|%(?!40|3a)[0-9a-f]{2})`
-  return new RegExp(`^datatug://${part}*/${part}+(\\?env=${part}+)?$`, 'i').test(url.trim())
+  return new RegExp(`^datatug://${part}*/${part}+(\\?env=${part}+)?$`, 'i').test(url)
 }
 
 // The reference of a database the project holds: what the CLI resolves back to its source.
@@ -368,7 +373,7 @@ export function dbName(target: string): string {
 }
 
 export function providerOf(url: string): string {
-  return /^([a-z][a-z0-9+.-]*):(?:\/\/|[a-z0-9_]+=)/i.exec(url.trim())?.[1].toLowerCase() ?? ''
+  return /^([a-z][a-z0-9+.-]*):\/\//i.exec(url.trim())?.[1].toLowerCase() ?? ''
 }
 
 const TOP = 100
@@ -473,14 +478,14 @@ async function openDatabase($: Host, raw: string) {
       if (!isDbRef(url)) void addToProject($, url)
       return
     }
-    if (!provider.startsWith('sqlite')) throw new Error(`${provider}: this datatug CLI cannot list the schema; update it`)
+    if (!provider.startsWith('sqlite')) throw new ModError(`${provider}: this datatug CLI cannot list the schema; update it`)
     // An older CLI: SQLite is read through sqlite_master.
     const out = await $.process.run(
       ['datatug', 'query', 'run', '--db', dbArg(url).arg, '--from', 'sqlite_master', '--no-policies', '--format', 'json'],
       { cwd: await $.session.cwd(), timeoutMs: 20000, env: dbArg(url).env },
     )
     const start = out.stdout.indexOf('[')
-    if (out.exitCode !== 0 || start < 0) throw new Error('could not open the database')
+    if (out.exitCode !== 0 || start < 0) throw new ModError('could not open the database')
     const rows = JSON.parse(out.stdout.slice(start)) as { name?: string; type?: string }[]
     const items = rows
       .filter(r => (r.type === 'table' || r.type === 'view') && typeof r.name === 'string' && !r.name.startsWith('sqlite_'))
@@ -494,7 +499,7 @@ async function openDatabase($: Host, raw: string) {
     await update($, openDb, () => ({ status: 'ready', provider, note, target, url: plain ? url : '', items, message: '' }))
     if (!isDbRef(url)) void addToProject($, url)
   } catch (err) {
-    await update($, openDb, () => ({ status: 'error', provider, note, target, url: '', items: [], message: err instanceof Error ? scrub(err.message).slice(0, 120) : 'failed' }))
+    await update($, openDb, () => ({ status: 'error', provider, note, target, url: '', items: [], message: failure(err, 120) }))
   }
 }
 
@@ -513,7 +518,7 @@ async function countRows($: Host, items: OpenDbState['items'], url: string, run:
       let rows: number | null = null
       let atLeast = false
       try {
-        if (t.name.startsWith('-')) throw new Error('unsupported table name')
+        if (t.name.startsWith('-')) throw new ModError('unsupported table name')
         const out = await $.process.run(
           ['datatug', 'query', 'run', '--db', dbArg(url).arg, '--from', t.name, '--no-policies', '--format', 'jsonl'],
           { cwd, timeoutMs: 30000, env: dbArg(url).env },
@@ -593,8 +598,8 @@ async function openDbRecords($: Host, name: string, kept: string, known: number 
   await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'loading' }))
   try {
     const url = dbUrl !== '' ? dbUrl : kept
-    if (url === '') throw new Error('Open the database again: its connection string is not kept.')
-    if (name.startsWith('-')) throw new Error('unsupported table name')
+    if (url === '') throw new ModError('Open the database again: its connection string is not kept.')
+    if (name.startsWith('-')) throw new ModError('unsupported table name')
     const child = $.process.spawn({
       argv: ['datatug', 'query', 'run', '--db', dbArg(url).arg, '--from', name, '--no-policies', '--format', 'jsonl'],
       cwd: await $.session.cwd(),
@@ -617,12 +622,12 @@ async function openDbRecords($: Host, name: string, kept: string, known: number 
     if (lines.length < TOP && buf.startsWith('{') && buf.endsWith('}')) lines.push(buf)
     const id = `db:${name}`
     const parsed = parseRows(`[${lines.join(',')}]`, id, 'datatug query run')
-    if (parsed === null || lines.length === 0) throw new Error('the table has no records')
+    if (parsed === null || lines.length === 0) throw new ModError('the table has no records')
     const result: GridResult = { ...parsed, db: redact(url) === url ? url : '', collection: clean(name).slice(0, 80), total: Math.max(known ?? 0, lines.length), isTruncated: (known ?? 0) > lines.length }
     await update($, results, all => ({ ...Object.fromEntries(Object.entries(all).slice(-9)), [id]: result }))
     await update($, dbRecords, () => ({ name, status: 'ready', message: '', resultId: id, page: 0 }))
   } catch (err) {
-    await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'error', message: err instanceof Error ? scrub(err.message).slice(0, 140) : 'failed' }))
+    await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'error', message: failure(err, 140) }))
   }
 }
 
@@ -645,7 +650,7 @@ async function loadDatabases($: Host, projectId: string | null, note = '') {
       cwd: await $.session.cwd(),
       timeoutMs: 15000,
     })
-    if (out.exitCode !== 0) throw new Error('datatug show failed')
+    if (out.exitCode !== 0) throw new ModError('datatug show failed')
     const doc = JSON.parse(out.stdout.slice(out.stdout.indexOf('{')))
     const items: DatabasesState['items'] = []
     for (const env of doc.environments ?? [])
@@ -653,7 +658,7 @@ async function loadDatabases($: Host, projectId: string | null, note = '') {
         if (items.length < 200) items.push({ env: clean(String(env.id)).slice(0, 60), id: clean(String(src.id)).slice(0, 80), driver: clean(String(src.driver ?? '')).slice(0, 40) })
     await update($, databases, () => ({ projectId, status: 'ready', items, message: '', note }))
   } catch (err) {
-    await update($, databases, () => ({ projectId, status: 'error', items: [], message: err instanceof Error ? scrub(err.message).slice(0, 120) : 'failed', note }))
+    await update($, databases, () => ({ projectId, status: 'error', items: [], message: failure(err, 120), note }))
   }
 }
 
@@ -670,7 +675,7 @@ async function addToProject($: Host, url: string) {
     })
     if (out.exitCode !== 0) {
       const old = /unknown command|unknown flag|no such command|invalid command/i.test(`${out.stderr}${out.stdout}`)
-      await loadDatabases($, sel, old ? 'Adding to the project needs a newer datatug CLI.' : `Not added to the project: ${scrub(out.stderr || out.stdout).slice(0, 120)}`)
+      await loadDatabases($, sel, old ? 'Adding to the project needs a newer datatug CLI.' : `Not added to the project (datatug exit code ${out.exitCode}).`)
       return
     }
     const res = JSON.parse(out.stdout.slice(out.stdout.indexOf('{'))) as { added?: boolean; dbRef?: string }
@@ -687,7 +692,7 @@ async function loadProjects($: Host) {
   try {
     const out = await $.process.run(['datatug', 'projects', '--format', 'json'], { cwd: await $.session.cwd(), timeoutMs: 15000 })
     const data = out.exitCode === 0 ? JSON.parse(out.stdout.slice(out.stdout.indexOf('['))) : null
-    if (!Array.isArray(data)) throw new Error('datatug projects did not answer')
+    if (!Array.isArray(data)) throw new ModError('datatug projects did not answer')
     const items = data
       .filter(p => p && typeof p.id === 'string')
       .slice(0, 100)
@@ -696,7 +701,7 @@ async function loadProjects($: Host) {
     await update($, project, cur => ({ isOpen: false, selected: cur.selected !== null && items.some(i => i.id === cur.selected) ? cur.selected : (items[0]?.id ?? null) }))
     await loadDatabases($, (await read($, project)).selected)
   } catch (err) {
-    await update($, projects, () => ({ status: 'error', items: [], message: err instanceof Error ? scrub(err.message).slice(0, 120) : 'failed' }))
+    await update($, projects, () => ({ status: 'error', items: [], message: failure(err, 120) }))
   }
 }
 
@@ -709,7 +714,7 @@ async function loadSchema($: Host, projectId: string | null) {
       cwd: await $.session.cwd(),
       timeoutMs: 20000,
     })
-    if (out.exitCode !== 0) throw new Error('datatug show failed')
+    if (out.exitCode !== 0) throw new ModError('datatug show failed')
     const doc = JSON.parse(out.stdout.slice(out.stdout.indexOf('{')))
     const tables: SchemaTable[] = []
     for (const env of doc.environments ?? [])
@@ -746,7 +751,7 @@ async function loadSchema($: Host, projectId: string | null) {
           }
     await update($, schema, () => ({ projectId, status: 'ready', tables, message: '' }))
   } catch (err) {
-    await update($, schema, () => ({ projectId, status: 'error', tables: [], message: err instanceof Error ? scrub(err.message).slice(0, 120) : 'failed' }))
+    await update($, schema, () => ({ projectId, status: 'error', tables: [], message: failure(err, 120) }))
   }
 }
 
