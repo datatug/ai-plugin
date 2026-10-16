@@ -161,7 +161,7 @@ async function namesStore($: Host, paths: unknown[]): Promise<boolean> {
   const home = await homeDir($)
   const cwd = await $.session.cwd().catch(() => undefined)
   for (const p of given) {
-    if (/\.datatug\/query-results|(?:^|\/)datatug-claude-mod(?:\/|$)|\.datatug\/[^/]*[*?[{]/.test(p)) return true
+    if (/\.datatug\/query-results|(?:^|\/)datatug-claude-mod(?:\/|$)|\.datatug\/[^/]*[*?[{]/i.test(p)) return true
     const wild = p.search(/[*?[{]/)
     const plain = wild < 0 ? p : p.slice(0, wild).replace(/[^/]*$/, '')
     const n = normalizePath(plain === '' ? '.' : plain, home, cwd)
