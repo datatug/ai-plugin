@@ -134,9 +134,9 @@ async function runQuery($: any, on: any, tmp: string | null) {
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('env.get', () => ({ value: tmp ?? undefined }))
   on('fs.read', () => ({ value: '[{"name":"SECRET-ALICE"}]' }))
-  on('fs.write', (_$: unknown, e: { path: string; text: string }) => {
-    writes.push([e.path, e.text])
-    return { value: undefined }
+  on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    writes.push([e.argv[0], e.argv.slice(1).join(' ')])
+    return { value: { exitCode: 0, stdout: '', stderr: '' } }
   })
   on('tool.call', { tool: 'Bash' }, (_$: unknown, e: { command: string }) => {
     commands.push(e.command)
@@ -146,13 +146,12 @@ async function runQuery($: any, on: any, tmp: string | null) {
   return { commands, writes, ran }
 }
 
-test('query rows go to an owner-only folder under the temporary folder and the file is emptied once read', async ($, on) => {
+test('query rows go to an owner-only folder under the temporary folder and the file is removed once read', async ($, on) => {
   const { commands, writes, ran } = await runQuery($, on, '/var/folders/ab/T/')
-  expect(commands).toHaveLength(1)
-  expect(commands[0]).toContain("mkdir -p -m 700 '/var/folders/ab/T/datatug-claude-mod'")
-  expect(commands[0]).toContain("> '/var/folders/ab/T/datatug-claude-mod/q_1.json'")
-  expect(commands[0]).toContain('--format json')
-  expect(writes).toEqual([['/var/folders/ab/T/datatug-claude-mod/q_1.json', '']])
+  expect(commands).toEqual([
+    "umask 077 && mkdir -p -m 700 '/var/folders/ab/T/datatug-claude-mod' && [ ! -L '/var/folders/ab/T/datatug-claude-mod' ] && [ -O '/var/folders/ab/T/datatug-claude-mod' ] && chmod 700 '/var/folders/ab/T/datatug-claude-mod' && (set -C; datatug query run --format json --db datatug://p/x --from people > '/var/folders/ab/T/datatug-claude-mod/q_1.json')",
+  ])
+  expect(writes).toEqual([['rm', '-f /var/folders/ab/T/datatug-claude-mod/q_1.json']])
   expect(JSON.stringify(ran).includes('SECRET-ALICE')).toBe(false)
 })
 
@@ -166,14 +165,15 @@ test('a temporary folder that is not absolute is not used', async ($, on) => {
   expect(commands[0]).toContain("mkdir -p -m 700 '/tmp/datatug-claude-mod'")
 })
 
-test('a command with shell syntax of its own is left alone', async ($, on) => {
+test('a command with shell syntax of its own is denied and does not run', async ($, on) => {
   const commands: string[] = []
   on('tool.call', { tool: 'Bash' }, (_$: unknown, e: { command: string }) => {
     commands.push(e.command)
     return { result: { stdout: 'x', stderr: '' }, text: '', ref: {} } as never
   })
-  await $.tool.call({ tool: 'Bash', tool_use_id: 'q2', command: 'datatug query run --db x --from y | head' } as never)
-  expect(commands).toEqual(['datatug query run --db x --from y | head'])
+  const ran = await $.tool.call({ tool: 'Bash', tool_use_id: 'q2', command: 'datatug query run --db x --from y | head' } as never)
+  expect(commands).toEqual([])
+  expect(JSON.stringify(ran)).toContain('plain `datatug query run')
 })
 
 test('a database opened with a password reaches no argument list, prompt, drawing or state, only DATATUG_OPEN_DB', async ($, on) => {
@@ -242,14 +242,14 @@ test('stripUnsafe covers the characters the project pane covers', () => {
   expect(stripUnsafe('a b⁠c﻿d\u{e0041}e\u0007f')).toBe('a b c d e f')
 })
 
-test('the rows file is emptied when the command failed, and the folder is checked before the redirect', async ($, on) => {
+test('the rows file is removed when the command failed, and the folder is checked before the redirect', async ($, on) => {
   const writes: string[] = []
   let command = ''
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
   on('fs.read', () => ({ value: '[{"name":"SECRET"}]' }) as never)
-  on('fs.write', (_$: unknown, e: { path: string }) => {
-    writes.push(e.path)
-    return { value: undefined } as never
+  on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    writes.push(e.argv.join(' '))
+    return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
   })
   on('tool.call', { tool: 'Bash' }, (_$: unknown, e: { command: string }) => {
     command = e.command
@@ -296,14 +296,15 @@ test('scrub blanks passwords written as key=value, with spaces, or in a jdbc str
   }
 })
 
-test('a command with a trailing shell comment is left alone, so no redirect can be swallowed', async ($, on) => {
+test('a command with a trailing shell comment is denied, so no redirect can be swallowed', async ($, on) => {
   const commands: string[] = []
   on('tool.call', { tool: 'Bash' }, (_$: unknown, e: { command: string }) => {
     commands.push(e.command)
     return { result: { stdout: 'x', stderr: '' }, text: '', ref: {} } as never
   })
-  await $.tool.call({ tool: 'Bash', tool_use_id: 'q5', command: 'datatug query run --db x --from t # note' } as never)
-  expect(commands).toEqual(['datatug query run --db x --from t # note'])
+  const ran = await $.tool.call({ tool: 'Bash', tool_use_id: 'q5', command: 'datatug query run --db x --from t # note' } as never)
+  expect(commands).toEqual([])
+  expect(JSON.stringify(ran)).toContain('deny')
 })
 
 test('a datatug reference with anything but env in its query is not a reference', () => {
@@ -336,9 +337,11 @@ test('a datatug command with a flag first, an env prefix or a path is intercepte
     commands.push(e.command)
     return { result: { stdout: '', stderr: '' }, text: '', ref: {} } as never
   })
-  for (const [i, c] of ['datatug --client x query run --db y --from t', 'FOO=1 datatug query run --db y --from t', '/usr/local/bin/datatug query run --db y --from t'].entries())
+  for (const [i, c] of ['datatug --profile x query run --db y --from t', 'FOO=1 datatug query run --db y --from t', '/usr/local/bin/datatug query run --db y --from t'].entries())
     await $.tool.call({ tool: 'Bash', tool_use_id: `b${i}`, command: c } as never)
+  expect(commands).toHaveLength(3)
   expect(commands.every(c => c.includes("> '/tmp/datatug-claude-mod/b"))).toBe(true)
+  expect(commands[1]).toContain('(set -C; FOO=1 datatug query run --format json --db y --from t >')
 })
 
 test('the rows file is emptied even when it could not be read', async ($, on) => {

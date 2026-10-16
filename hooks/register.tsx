@@ -4,6 +4,7 @@ import type { Register } from 'claude-code'
 import { MIN_CLI_VERSION, VERSION_ARGS, isOlder, missingCliText, parseVersion, tooOldText } from '../lib/cli.js'
 import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, bigIntegers, fingerprint, isSameHost, parseDevHost, readLink, recordKey, sourceUnavailableText, urlArgs } from '../lib/links.js'
 import { isProjectView } from '../lib/command.js'
+import { FAILED_TEXT, STORE_TEXT, bashNamesStore, classify, normalizePath, pathInStore } from '../lib/bash.js'
 import { stripUnsafe } from '../lib/text.js'
 import { canDrawPane } from '../lib/view.js'
 import { registerProject } from './project.js'
@@ -88,23 +89,96 @@ const hrefs = new Map<string, { req: string; href: string }>()
 // The request each card is fetching now, so a render does not start a second fetch.
 const fetching = new Map<string, string>()
 
-// `datatug ... query run` as the command itself: not the words inside a quoted argument of another command.
-const RUN = /^\s*(?:(?:env|time)\s+|[A-Za-z_]\w*=\S*\s+)*(?:\S*\/)?datatug(?:\s+[^\s'"]+)*?\s+query\s+run(?![\w-])(?!.*\s-(?:-help|h)\b)/
-const PLAIN = /[|;&<>$`()\n\r#\\]/
 const NO_PANE_TEXT = 'The DataTug panel needs the terminal or the Desktop app. Run `/datatug project` for a text summary of the project in this folder.'
 const ROWS_DIR = 'datatug-claude-mod'
 
-// Where a run's rows are written for the mod to read: a folder of its own under the temporary
-// folder (the per-user one when the session has TMPDIR), made owner-only. The model never reads it.
-async function rowsDir($: Host): Promise<string> {
-  let base = '/tmp'
+// The temporary folder the capture folder goes in: the per-user one when the session has TMPDIR
+// (absolute, with no quote, backslash or white space), else /tmp.
+async function tmpBase($: Host): Promise<string> {
   try {
     const t = await $.env.get('TMPDIR')
-    if (typeof t === 'string' && t.startsWith('/') && !/['\\\s]/.test(t)) base = t.replace(/\/+$/, '') || '/tmp'
+    if (typeof t === 'string' && t.startsWith('/') && !/['\\\s]/.test(t)) return t.replace(/\/+$/, '') || '/tmp'
   } catch {
     // no environment here: the fixed folder stands
   }
-  return `${base}/${ROWS_DIR}`
+  return '/tmp'
+}
+
+// Where a run's rows are written for the mod to read: a folder of its own under the temporary
+// folder, made owner-only. The model never reads it.
+async function rowsDir($: Host): Promise<string> {
+  return `${await tmpBase($)}/${ROWS_DIR}`
+}
+
+async function homeDir($: Host): Promise<string | undefined> {
+  try {
+    const h = await $.env.get('HOME')
+    return typeof h === 'string' && h.startsWith('/') && h.length > 1 ? h.replace(/\/+$/, '') : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// The folders the model's own tools must not reach: the result store and the capture folder, each
+// with the folder directly above it, as spelled and as resolved where they exist.
+async function storeRoots($: Host): Promise<{ dir: string; parent: string }[]> {
+  const home = await homeDir($)
+  const base = await tmpBase($)
+  const roots = [{ dir: `${base}/${ROWS_DIR}`, parent: base }]
+  if (home !== undefined) roots.push({ dir: `${home}/.datatug/query-results`, parent: `${home}/.datatug` })
+  const real = async (p: string) => {
+    try {
+      return (await $.fs.exists(p)) ? ((await $.fs.stat(p, { resolve: true })).realPath ?? p) : p
+    } catch {
+      return p
+    }
+  }
+  const resolved = await Promise.all(roots.map(async r => ({ dir: await real(r.dir), parent: await real(r.parent) })))
+  return [...roots, ...resolved]
+}
+
+// Whether any of the paths a model tool was given names the store or the capture folder: by its
+// spelling (folded, a glob pattern by the folder before its first wildcard), and where it resolves
+// when it exists.
+async function namesStore($: Host, paths: unknown[]): Promise<boolean> {
+  const given = paths.filter((p): p is string => typeof p === 'string' && p.trim() !== '')
+  if (given.length === 0) return false
+  const roots = await storeRoots($)
+  const home = await homeDir($)
+  const cwd = await $.session.cwd().catch(() => undefined)
+  for (const p of given) {
+    if (/\.datatug\/query-results|(?:^|\/)datatug-claude-mod(?:\/|$)|\.datatug\/[^/]*[*?[{]/i.test(p)) return true
+    const wild = p.search(/[*?[{]/)
+    const plain = wild < 0 ? p : p.slice(0, wild).replace(/[^/]*$/, '')
+    const n = normalizePath(plain === '' ? '.' : plain, home, cwd)
+    if (pathInStore(n, roots)) return true
+    if (n !== null && wild < 0) {
+      try {
+        if (await $.fs.exists(n)) {
+          const realPath = (await $.fs.stat(n, { resolve: true })).realPath
+          if (realPath !== undefined && pathInStore(realPath, roots)) return true
+        }
+      } catch {
+        // a path that cannot be looked at is judged by its spelling alone
+      }
+    }
+  }
+  return false
+}
+
+// Removes a capture file through the shell (the mod's file access cannot delete), else empties it.
+async function removeCapture($: Host, file: string) {
+  try {
+    const r = await $.process.run(['rm', '-f', file], { timeoutMs: 10000 })
+    if (r.exitCode === 0) return
+  } catch {
+    // emptied below instead
+  }
+  try {
+    if (await $.fs.exists(file)) await $.fs.write(file, '')
+  } catch {
+    // a file that can be neither removed nor emptied is left as it is
+  }
 }
 
 // Control characters and line breaks would let a data value act on the terminal.
@@ -950,34 +1024,56 @@ export const register: Register = (on, options) => {
     return { text: 'DataTug panel opened.' }
   }).catch(() => ({ text: 'The DataTug panel could not be opened. Run `/datatug` again, or `/datatug project` for a text summary of the project in this folder.' }))
 
+  // The model's own file tools never reach the result store or the capture folder. Judged on the
+  // model's input, before any rewrite; a guard that fails denies.
+  const guarded: [string, string[]][] = [
+    ['Read', ['file_path']],
+    ['Grep', ['path']],
+    ['Glob', ['path', 'pattern']],
+    ['Edit', ['file_path']],
+    ['Write', ['file_path']],
+    ['NotebookEdit', ['notebook_path']],
+  ]
+  for (const [tool, keys] of guarded)
+    on('tool.call', { tool } as never, async ($: Host, e: Record<string, unknown>, next: (e: unknown) => unknown) =>
+      (await namesStore($, keys.map(k => e[k]))) ? { deny: STORE_TEXT } : next(e),
+    ).catch(() => ({ deny: STORE_TEXT }) as never)
+
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    // Plain commands only: the mod adds a redirect, so no shell syntax of the model's own.
-    if (!RUN.test(e.command) || PLAIN.test(e.command)) return next(e)
-    const hasFormat = /--format[ =]/.test(e.command)
+    const command0 = String(e.command ?? '')
+    if (bashNamesStore(command0, await homeDir($ as Host))) return { deny: STORE_TEXT }
+    const c = classify(command0, (e as { run_in_background?: unknown }).run_in_background === true)
+    if (c.kind === 'none' || c.kind === 'help') return next(e)
+    if (c.kind === 'deny') return { deny: c.reason }
+    // The plain form: the rows go to a file of the mod's, never through Bash's output.
     const dir = await rowsDir($ as Host)
     const file = `${dir}/${e.tool_use_id.replace(/[^A-Za-z0-9_-]/g, '_')}.json`
-    // The folder must be ours and not a link before the rows are written, and the file is owner-only.
-    const command = `umask 077 && mkdir -p -m 700 '${dir}' && [ ! -L '${dir}' ] && [ -O '${dir}' ] && chmod 700 '${dir}' && ${e.command.trim()}${hasFormat ? '' : ' --format json'} > '${file}'`
-    // The rows go to a file, not through Bash's output (30000 characters, then cut).
+    const run = c.format === null ? `${c.head} --format json${c.tail}` : `${c.head}${c.tail}`
+    // The folder must be ours and not a link before the rows are written, the file is owner-only, and
+    // `set -C` refuses a file that is already there (one planted as a link) instead of writing through it.
+    const command = `umask 077 && mkdir -p -m 700 '${dir}' && [ ! -L '${dir}' ] && [ -O '${dir}' ] && chmod 700 '${dir}' && (set -C; ${run} > '${file}')`
     let ran: Awaited<ReturnType<typeof next>>
     let stdout: string | null = null
+    let isBackground = false
     try {
       ran = await next({ ...e, command })
-      try {
-        stdout = await $.fs.read(file)
-      } catch {
-        // unreadable: the file is emptied below if it is there
+      isBackground = typeof (ran.result as { backgroundTaskId?: unknown } | undefined)?.backgroundTaskId === 'string'
+      if (ran.deny === undefined && !isBackground) {
+        try {
+          stdout = await $.fs.read(file)
+        } catch {
+          // unreadable: nothing to show
+        }
       }
     } finally {
-      // Whatever happened, the rows are not left on disk: emptied once read, or if they could not be.
-      try {
-        if (stdout !== null || (await $.fs.exists(file))) await $.fs.write(file, '')
-      } catch {
-        // a file that cannot be emptied is left as it is
-      }
+      // Whatever happened, the rows are not left on disk.
+      await removeCapture($ as Host, file)
     }
-    if (stdout === null) return ran
-    if (ran.deny !== undefined || ran.isError === true) return ran
+    if (ran.deny !== undefined) return ran
+    const out = (ran.result ?? {}) as object
+    if (isBackground) return { result: { ...out, stdout: 'The DataTug query went to the background, so its rows were not captured. Run it in the foreground to see them in a card.' } } as typeof ran
+    if (ran.isError === true || stdout === null) return ran
+    if (c.format !== null && c.format !== 'json') return { result: { ...out, stdout: 'The output was captured privately; leave out --format to see the result in a card.' } } as typeof ran
     const parsed = parseRows(stdout, e.tool_use_id, e.command)
     if (parsed === null) return ran
     await update($, results, all => {
@@ -986,10 +1082,9 @@ export const register: Register = (on, options) => {
     })
     await update($, view, () => ({ current: parsed.id, selected: null, offset: 0 }))
     void ensureSchema($ as Host)
-    const out = (ran.result ?? {}) as object
     // Not `ran`'s ref or text: core would use the messages it already made for the model.
     return { result: { ...out, stdout: summary(parsed) } } as typeof ran
-  }).catch(() => ({ deny: 'The DataTug mod could not show the rows of this query, so it did not hand them to Claude. Ask the person to run it again.' }) as never)
+  }).catch(() => ({ deny: FAILED_TEXT }) as never)
 
   // The grid in the chat, under the call's own row: a Markdown table whose first
   // column links each row; pressing a link opens that record's card in the pane.
