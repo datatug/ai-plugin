@@ -1687,7 +1687,7 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
       <Box {...frame}>
         <Box key={k('head-row')} flexDirection={fits ? 'row' : 'column'} flexWrap={fits ? 'wrap' : 'nowrap'} justifyContent="space-between" columnGap={2}>
           <Box flexShrink={1} minWidth={0}>
-            <Text dimColor wrap="truncate-end">{gridText(`${headerText}${PRIVATE}`, 300)}</Text>
+            <Text dimColor>{gridText(`${headerText}${PRIVATE}`, 1000)}</Text>
           </Box>
           {linkNode !== null && (
             <Box flexDirection="row" gap={2} flexShrink={0}>
@@ -3062,7 +3062,7 @@ export const register: Register = (on, options) => {
     }
 
     // The newest result card, the one the transcript row also draws, from the same code and the same
-    // member, so a press here and a press there are one state. Its views take the keys 1-5.
+    // member, so a press here and a press there are one state. Its views have no digit keys.
     const latest = latestKeys.at(-1)
     const latestState = latest === undefined || latest === closedKey ? NO_CARD : await read($, memberOf(cards, { requestId: latest }))
     // "✕" closes the section (the transcript row keeps its card and can show it again by Load), and so
