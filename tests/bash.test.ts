@@ -83,6 +83,24 @@ test('every other form of datatug query run is denied with a reason the model ca
     'datatug query run -f q --result-i[d] 1',
     'datatug query run -f q --result-?d 1',
     'datatug query run -f q --cl*nt x',
+    '/usr/bin/env datatug query run -f q.dtql',
+    '/usr/bin/time datatug query run -f q.dtql',
+    '/usr/bin/nice datatug query run -f q.dtql',
+    'noglob datatug query run -f q.dtql',
+    'nocorrect datatug query run -f q.dtql',
+    '- datatug query run -f q.dtql',
+    'repeat 1 datatug query run -f q.dtql',
+    'arch -arm64 datatug query run -f q.dtql',
+    'gtimeout 60 datatug query run -f q.dtql',
+    'coproc datatug query run -f q.dtql',
+    'ltrace datatug query run -f q.dtql',
+    'sandbox-exec -n no-network datatug query run -f q.dtql',
+    'some-unknown-wrapper --opt datatug query run -f q.dtql',
+    'datatug query run -f q.dtql "--client" claude-mod',
+    "datatug query run -f q.dtql '--result-id' x",
+    "datatug query run -f q.dtql '--'",
+    'DATATUG_CLIENT=claude-mod datatug query run -f q.dtql',
+    'env DATATUG_CLIENT=claude-mod datatug query run -f q.dtql',
     'datatug query $"run" --db x --from c',
   ]
   for (const cmd of denied) {
@@ -93,6 +111,8 @@ test('every other form of datatug query run is denied with a reason the model ca
   expect(classify('datatug query run --db a --from T', true)).toEqual({ kind: 'deny', reason: BACKGROUND_TEXT })
   // zsh runs `=datatug` as the datatug on the PATH: it is the plain form, and rewritten.
   expect(classify('=datatug query run --db x --from c', false).kind).toBe('plain')
+  // macOS runs DataTug as datatug: it is the plain form, and rewritten.
+  for (const cmd of ['DataTug query run -f q.dtql', 'DATATUG query run -f q.dtql', '~/.local/bin/DataTug query run -f q.dtql']) expect({ cmd, kind: classify(cmd, false).kind }).toEqual({ cmd, kind: 'plain' })
 })
 
 test('a pure help call passes through, and words of the command elsewhere are not matched', () => {
@@ -151,6 +171,12 @@ test('the store and the capture folder are named only by their paths, never by p
     'ls ~//.datatug/query-{results,x}',
     'datatug ui --result t1',
     'datatug --client x ui --result=t1',
+    'DATATUG query results locate x',
+    '/usr/bin/env datatug query results locate x',
+    'noglob datatug query results locate x',
+    'noglob datatug daemon url --result=t1',
+    'grep -r . ~alex/.datatug',
+    'ls ~alex/.datatug',
   ]) expect({ cmd, denied: bashNamesStore(cmd, HOME) }).toEqual({ cmd, denied: true })
   for (const cmd of [
     'rg datatug-claude-mod hooks/',
