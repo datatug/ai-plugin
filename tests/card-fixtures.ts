@@ -6,7 +6,7 @@ export const REF = 'datatug://demo/chinook?env=local'
 
 type Col = { name: string; type: string; declaredType?: string | null; nullable?: boolean | null; pk?: number | null; source?: unknown; foreignKeys?: unknown[] }
 
-export function metaDoc(id: string, opts: { columns?: Col[]; ref?: string | null; participants?: unknown[]; related?: unknown[]; unavailable?: Record<string, string>; version?: number; kept?: number; hasMore?: boolean; dataBytes?: number } = {}) {
+export function metaDoc(id: string, opts: { columns?: Col[]; ref?: string | null; participants?: unknown[]; related?: unknown[]; unavailable?: Record<string, string>; version?: number; kept?: number; hasMore?: boolean; dataBytes?: number; query?: Record<string, unknown> } = {}) {
   const src = (relation: string, column: string, instance = 'root') => ({ instance, schema: 'main', relation, column })
   const columns: Col[] = opts.columns ?? [
     { name: '$key', type: 'string', declaredType: null, nullable: null, pk: null, source: null, foreignKeys: null as never },
@@ -25,7 +25,7 @@ export function metaDoc(id: string, opts: { columns?: Col[]; ref?: string | null
     cliVersion: '0.94.0',
     dataBytes: opts.dataBytes ?? 0,
     db: { ref, project: ref === null ? null : 'demo', env: ref === null ? null : 'local', source: ref === null ? null : 'chinook', driver: 'sqlite' },
-    query: { kind: 'dtql', dtql: 'from: Invoice', policy: 'none' },
+    query: opts.query ?? { kind: 'dtql', dtql: 'from: Invoice', policy: 'none' },
     rows: { kept: opts.kept ?? 3, hasMore: opts.hasMore ?? false, truncatedBy: 'none' },
     provenance: null,
     columns,
@@ -81,6 +81,8 @@ export type Cli = {
   // What each `query results annotate` was given on standard input (argv is in `runs`), and how it ends.
   stdins: { argv: string[]; stdin: string | undefined; env: Record<string, string> | undefined }[]
   annotate: 'ok' | 'unknown-command' | 'fail' | 'throw'
+  // What `query run` answers (the "More rows" re-run); it may add result files to `files`. Absent: refused.
+  queryRun?: (argv: string[], init: { cwd?: string; env?: Record<string, string>; stdin?: string } | undefined) => { exitCode: number; stdout: string; stderr: string } | Promise<{ exitCode: number; stdout: string; stderr: string }>
   reads: string[]
   files: Record<string, string>
   stats: Record<string, { kind: 'file' | 'dir'; size?: number; realPath?: string }>
@@ -194,7 +196,7 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
     if (e.component === 'ToolResult') cli.resultOutputs[e.requestId] = e.props.output
     return h(_$.ui.resolve(e).Text, {}, 'row')
   })
-  on('process.run', (_$: unknown, e: { argv: string[]; init?: { stdin?: string; env?: Record<string, string> } }) => {
+  on('process.run', async (_$: unknown, e: { argv: string[]; init?: { stdin?: string; env?: Record<string, string> } }) => {
     const a = e.argv.slice(1)
     cli.runs.push(e.argv)
     if (a.join(' ').startsWith('query results annotate ')) {
@@ -206,6 +208,7 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
     }
     const ok = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '' } })
     const t = a.join(' ')
+    if (a[0] === 'query' && a[1] === 'run' && cli.queryRun !== undefined) return { value: await cli.queryRun(e.argv, e.init as never) }
     if (t === '--version') return cli.version instanceof Error ? { deny: cli.version.message } : ok(`${cli.version}\n`)
     if (t === 'query results check --format json') return ok(cli.check)
     if (t.startsWith('query results locate --id ')) return ok(cli.locate(a[4]))
