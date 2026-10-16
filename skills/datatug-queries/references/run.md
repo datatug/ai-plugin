@@ -1,19 +1,18 @@
 # datatug queries — run
 
-Execute a saved query, optionally with parameters.
+Run a query: a table of a project database, or a saved query with parameters.
 
-## Command
+## Commands
 
 ```bash
-datatug queries <subcommand> [args] -p <project>
+datatug query run --db 'datatug://<project>/<db-id>?env=<ENV>' --from <Table> --limit <N> --no-policies
+datatug query run --project <project> --query <id> --var Name=value [--env <ENV>]
 ```
-
-## When to use
-
-- Ad-hoc troubleshooting using a parametrised query.
-- Scripted reporting from CI or a cron job.
 
 ## Notes
 
-- Select the project with `-p <name>` or `-d <path>`.
-- ⚠️ A dedicated run subcommand is **not confirmed** in the current CLI — `datatug queries` with no subcommand only *lists* queries. The exact run subcommand name and parameter-passing syntax depend on the CLI version. Run `datatug queries --help` for the authoritative list before relying on this.
+- `--db` and `--project` never go together. With `--db`, give a `datatug://` reference, never a connection string.
+- `--limit` and `--offset` work with `--from` only. No ranking column named means the first rows.
+- Run it plainly, with no pipe, redirect or `&&`. The rows are drawn in the card, not given to you.
+- Never read `~/.datatug` or look for connection strings.
+- `datatug query run --help` is the authoritative flag list.
