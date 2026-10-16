@@ -75,6 +75,11 @@ test('every other form of datatug query run is denied with a reason the model ca
     'script -q /dev/null datatug query run --db x --from c',
     'unbuffer datatug query run --db x --from c',
     'npx datatug query run --db x --from c',
+    "datatug query $'run' --db x --from c",
+    "datatug $'query' run --db x --from c",
+    "$'datatug' query run --db x --from c",
+    "datatug query $'\\x72un' --db x --from c",
+    'datatug query $"run" --db x --from c',
   ]
   for (const cmd of denied) {
     const c = classify(cmd, false)
@@ -82,6 +87,8 @@ test('every other form of datatug query run is denied with a reason the model ca
     expect((c as { reason: string }).reason).toBe(PLAIN_TEXT)
   }
   expect(classify('datatug query run --db a --from T', true)).toEqual({ kind: 'deny', reason: BACKGROUND_TEXT })
+  // zsh runs `=datatug` as the datatug on the PATH: it is the plain form, and rewritten.
+  expect(classify('=datatug query run --db x --from c', false).kind).toBe('plain')
 })
 
 test('a pure help call passes through, and words of the command elsewhere are not matched', () => {
@@ -130,6 +137,8 @@ test('the store and the capture folder are named only by their paths, never by p
     'cat ~/.datatug/"query-results"/*/*',
     'cat ~/.DATATUG/QUERY-RESULTS/*/*',
     'ls "$HOME"/.datatug',
+    'ls $TMPDIR/datatug-claude-*',
+    "datatug query results $'locate' --id t1",
   ]) expect({ cmd, denied: bashNamesStore(cmd, HOME) }).toEqual({ cmd, denied: true })
   for (const cmd of [
     'rg datatug-claude-mod hooks/',
