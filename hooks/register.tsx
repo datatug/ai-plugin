@@ -374,8 +374,8 @@ export function bagPrompt(entries: BagEntry[], projectId: string | null, openDb 
     `My DataTug context bag${where}:\n${lines.join('\n')}\n\n` +
     `Answer by running this at once, without asking and without loading skills: ${shape}\n` +
     `Quote the reference as shown; use --db with it only (never --project with --db). Never look for connection strings and never read the DataTug store. ` +
-    `The rows appear in the panel card, not to you. "Top N" with no ranking column named means the first N rows (--limit N). The environment is the one in the reference. ` +
-    `Ask only if the database is not recorded and the project has several. Then reply with one line saying the result is in the panel card; do not offer to read, list or paste rows.\n\n`
+    `The rows appear in the card in the chat, not to you. "Top N" with no ranking column named means the first N rows (--limit N). The environment is the one in the reference. ` +
+    `Ask only if the database is not recorded and the project has several. Then reply with one line saying the result is in the card above; do not offer to read, list or paste rows.\n\n`
   )
 }
 
@@ -1239,6 +1239,22 @@ async function loadCard($: Host, key: string, id: string): Promise<CardMeta | nu
   return m.meta
 }
 
+// One constant line in the transcript for each result, so a card the engine folded into a count line,
+// refused or failed to draw is never silent. `$.ui.log` is the transcript line (dim, not sent to the
+// model); `$.ui.notice` only puts a line under an open permission dialog. No path, id, row or command.
+const NOTICE_PLACED = 'DataTug: result card above; ctrl+x tab to use it in the DataTug panel, Esc returns (ctrl+o expands folded tool calls).'
+const NOTICE_UNPLACED = 'DataTug: result card above; run /datatug to use it in the DataTug panel (ctrl+o expands folded tool calls).'
+async function announceCard($: Host): Promise<void> {
+  try {
+    // The panel shows the newest card with the views as focusable buttons. Opened without `focus`: it
+    // never takes the keys from what the person is typing. An open panel is only redrawn by the state.
+    const opened = await ($ as unknown as { ui: { open: (p: { id: string; title: string }) => Promise<{ isPlaced?: boolean } | undefined> } }).ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+    ;($ as unknown as { ui: { log: (text: string) => void } }).ui.log(opened?.isPlaced === true ? NOTICE_PLACED : NOTICE_UNPLACED)
+  } catch {
+    // a line that cannot be drawn is not worth failing the query for
+  }
+}
+
 // Whether a Bash row's command is one the mod gave result files: the plain form as the model wrote
 // it, or the rewritten one naming this result id.
 function isCardCommand(command: string, id: string): boolean {
@@ -1253,7 +1269,7 @@ const VIEW_KEYS: CardView[] = VIEWS as CardView[]
 // One result card under its `datatug query run` row: a header, the five-view switcher, the view,
 // and, when the CLI can open the result elsewhere, the web link and the terminal command. It reads
 // nothing but its own member and the column order; a press writes only its member.
-async function drawCard($: Host, e: { requestId: string; surface: string; props: { bodyColumns?: number } }, row: unknown, card: CardState) {
+async function drawCard($: Host, e: { requestId: string; surface: string; component?: string; props: { bodyColumns?: number } }, row: unknown, card: CardState, hotkeys = false) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { Box, Text, Button, Markdown, Link, Code } = $.ui.resolve(e as never) as any
   const key = e.requestId
@@ -1572,8 +1588,8 @@ async function drawCard($: Host, e: { requestId: string; surface: string; props:
         {`${kept} row${kept === 1 ? '' : 's'}${meta.rows.hasMore ? ` (at least ${kept + 1})` : ''} x ${names.length} column${names.length === 1 ? '' : 's'} (shown to you, not to Claude)`}
       </Text>
       <Box flexDirection="row" gap={1}>
-        {VIEW_KEYS.map(v => (
-          <Button key={k('view', v)} plain onPress={() => set(c => ({ ...c, view: v }))}>
+        {VIEW_KEYS.map((v, i) => (
+          <Button key={k('view', v)} plain {...(hotkeys ? { hotkey: String(i + 1) } : {})} onPress={() => set(c => ({ ...c, view: v }))}>
             {`${card.view === v ? '●' : '○'} ${VIEW_LABELS[v]}`}
           </Button>
         ))}
@@ -1667,6 +1683,7 @@ export const register: Register = (on, options) => {
       }
       // Never the tool's stdout for paths: the mod asks the CLI where the files are.
       const meta = await loadCard($ as Host, key, id)
+      if (meta !== null) await announceCard($ as Host)
       return { result: { ...out, stdout: meta === null ? TEXT.ran : resultSummary(meta) } } as typeof ran
     }
     // The plain form, private capture: the rows go to a file of the mod's, never through Bash's output.
@@ -1707,9 +1724,29 @@ export const register: Register = (on, options) => {
     })
     await update($, view, () => ({ current: parsed.id, selected: null, offset: 0 }))
     void ensureSchema($ as Host)
+    await announceCard($ as Host)
     // Not `ran`'s ref or text: core would use the messages it already made for the model.
     return { result: { ...out, stdout: summary(parsed) } } as typeof ran
   }).catch(() => ({ deny: FAILED_TEXT }) as never)
+
+  // The engine folds a run of shell commands into one count line ("Ran 1 shell command") and draws no
+  // ToolUse row for them, so the card under the row would never be drawn. A group holding a DataTug
+  // query call is unfolded (`isExpanded`, the one ToolGroup prop a rewrite changes on screen); each
+  // row it unfolds into is a ToolUse the hook below draws the card under. The group reads the calls'
+  // own card members, so it is drawn again when a result lands.
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    if (e.props.isExpanded) return next(e)
+    const all = await read($, results)
+    let hasCard = false
+    for (const call of e.props.calls) {
+      if (call.tool !== 'Bash' || call.tool_use_id === undefined) continue
+      const id = resultId(call.tool_use_id)
+      const command = String(((call.input ?? {}) as { command?: unknown }).command ?? '')
+      const card = await read($, memberOf(cards, { requestId: call.tool_use_id }))
+      if (card.status !== 'none' || all[call.tool_use_id] !== undefined || (id !== null && isCardCommand(command, id))) hasCard = true
+    }
+    return next(hasCard ? { ...e, props: { ...e.props, isExpanded: true } } : e)
+  })
 
   // The grid in the chat, under the call's own row: a Markdown table whose first
   // column links each row; pressing a link opens that record's card in the pane.
@@ -1725,7 +1762,18 @@ export const register: Register = (on, options) => {
       // A row whose call ran with result files, after the state lost it (a reload, a resumed session).
       const input = (e.props.input ?? {}) as { command?: unknown }
       const id = resultId(e.requestId)
-      if (e.props.isRunning || id === null || !isCardCommand(String(input.command ?? ''), id)) return next(e)
+      if (id === null || !isCardCommand(String(input.command ?? ''), id)) return next(e)
+      // While the call runs the row already carries a short line, so the result's arrival is an update
+      // of a drawn row and not its first drawing.
+      if (e.props.isRunning) {
+        const { Box, Text } = $.ui.resolve(e)
+        return (
+          <Box flexDirection="column">
+            {await next(e)}
+            <Text dimColor>Loading result...</Text>
+          </Box>
+        )
+      }
       return drawCard($ as Host, e, await next(e), { ...NO_CARD, id, status: 'load' })
     }
     const limits = await read($, shownRows)
@@ -1775,7 +1823,7 @@ export const register: Register = (on, options) => {
   // optional ones that appear on demand (the record card).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Input, Link } = $.ui.resolve(e)
-    const all = await read($, results)
+    const [all, latestKeys] = await Promise.all([read($, results), read($, cardRows)])
     const v = await read($, view)
     const ps = await read($, projects)
     const proj = await read($, project)
@@ -2887,8 +2935,23 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // The newest result card, the one the transcript row also draws, from the same code and the same
+    // member, so a press here and a press there are one state. Its views take the keys 1-5.
+    const latest = latestKeys.at(-1)
+    const latestState = latest === undefined ? NO_CARD : await read($, memberOf(cards, { requestId: latest }))
+    const latestCard =
+      latest === undefined || latestState.status === 'none' ? null : (
+        <Box key="card-latest" flexDirection="column" borderStyle="round" paddingX={1}>
+          <Text bold dimColor>
+            Latest result
+          </Text>
+          {await drawCard($ as Host, { requestId: latest, surface: e.surface, component: e.component, props: {} }, null, latestState, true)}
+        </Box>
+      )
+
     return (
       <Box flexDirection="column" gap={1}>
+        {latestCard}
         {projectCard}
         {bagCard}
         {openCard}
