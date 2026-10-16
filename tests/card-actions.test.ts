@@ -101,7 +101,7 @@ test('with more than 10 columns Check again sits beside the columns note, not th
   const boxes = (await tree.findAll({ type: 'Box' } as never)) as any[]
   const head = boxes.find(b => b.props?.key === key('w1', 'head-row'))
   expect(JSON.stringify(head)).not.toContain(key('w1', 'check'))
-  const note = boxes.find(b => b.props?.flexDirection === 'row' && JSON.stringify(b.children).includes('First 10 of 12 columns') && JSON.stringify(b.children).includes(key('w1', 'check')) && !JSON.stringify(b.children).includes('Copy CSV'))
+  const note = boxes.find(b => b.props?.flexDirection === 'row' && JSON.stringify(b.children).includes('Columns 1-10 of 12') && JSON.stringify(b.children).includes(key('w1', 'check')) && !JSON.stringify(b.children).includes('Copy CSV'))
   expect(note).toBeDefined()
   // In another view the note is gone and Check again is beside the link again.
   await tree.press({ key: key('w1', 'view', 'columns') } as never)
