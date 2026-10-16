@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { MIN_CLI_VERSION } from '../lib/cli.js'
-import { LINK_MIN_CLI_VERSION, bigIntegers, checkHref, fingerprint, isSameHost, keyValue, parseDevHost, rawFields, readLink, recordKey, statusPort, urlArgs } from '../lib/links.js'
+import { LINK_MIN_CLI_VERSION, MESSAGES, bigIntegers, checkHref, fingerprint, isSameHost, keyValue, parseDevHost, rawFields, readLink, recordKey, statusPort, urlArgs } from '../lib/links.js'
 import { sourceName, sqlitePath } from '../hooks/register'
 
 // What `datatug daemon url --format json` 0.86.0 prints, as run against the demo project.
@@ -167,4 +167,16 @@ test('a database is added under a plain source id, a SQLite file by its plain pa
   expect(sqlitePath('sqlite:///data/x.sqlite')).toBe('/data/x.sqlite')
   expect(sqlitePath('sqlite://user:s3cret@/tmp/x.db')).toBe(null)
   expect(sqlitePath('sqlite:///tmp/x.db?mode=ro')).toBe(null)
+})
+
+test('a daemon that could not start for want of a principal is named, from status or url', () => {
+  const status = run({ running: false, port: 0, error: 'could not start', startError: 'policy-principal-required' })
+  expect(readLink(status, url(TABLE, 'table-metadata', { running: false }), 'table', null)).toEqual({ status: 'policy-principal' })
+  expect(readLink(STATUS, url(TABLE, 'table-metadata', { running: false, startError: 'policy-principal-required' }), 'table', null)).toEqual({ status: 'policy-principal' })
+  expect(readLink(status, url(TABLE, 'table-metadata', { running: false, uiSupport: 'pending' }), 'table', null)).toEqual({ status: 'policy-principal' })
+  // Another or no reason stays the plain warning; a running daemon is not blamed.
+  expect(readLink(run({ running: false, startError: 'other' }), url(TABLE, 'table-metadata', { running: false }), 'table', null)).toEqual({ status: 'down' })
+  expect(readLink(run({ running: true, port: 8989, startError: 'policy-principal-required' }), url(TABLE, 'table-metadata'), 'table', null)).toEqual({ status: 'ok', href: TABLE })
+  expect(MESSAGES['policy-principal']).toContain('datatug serve --as')
+  expect(MESSAGES['policy-principal']).not.toMatch(/\/|policies/)
 })

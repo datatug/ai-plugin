@@ -198,7 +198,7 @@ test('a bad locate answer is never read and the card names the state', async ($,
     [{ locate: () => JSON.stringify({ resultFiles: { version: 1, id, root: `${ROOT}/../x`, data: `${ROOT}/../x/${id}/data.json`, meta: `${ROOT}/../x/${id}/meta.json` } }) }, 'not readable'],
     [{ stats: { [`${ROOT}/${id}/data.json`]: { kind: 'file', size: 10, realPath: '/etc/passwd' } } }, 'not readable'],
     [{ stats: { [`${ROOT}/${id}/data.json`]: { kind: 'file', size: 5 * 1024 * 1024 } } }, 'too large'],
-    [{ stats: { [`${ROOT}/${id}/data.json`]: { kind: 'file', size: 7 } } }, 'too large'],
+    [{ stats: { [`${ROOT}/${id}/data.json`]: { kind: 'file', size: 7 } } }, 'do not agree'],
     [{ stats: { [`${ROOT}/${id}/meta.json`]: { kind: 'file', size: 2 * 1024 * 1024 } } }, 'too large'],
     [{ locate: () => 'garbage' }, 'did not report its result files'],
   ]
@@ -454,4 +454,41 @@ test('the model cannot read the store through its own tools while cards are draw
   const out = JSON.stringify(await $.tool.call({ tool: 'Read', tool_use_id: 'r9', file_path: `${ROOT}/q1/data.json` } as never))
   expect(out).toContain('shown in the card, not to Claude')
   expect(DATA_COLUMNS.length).toBe(5)
+})
+
+test('a size that disagrees with meta.json says the files are inconsistent, not too large', async ($, on) => {
+  const cli = fakeWorld(on, result('n1'), { stats: { [`${ROOT}/n1/data.json`]: { kind: 'file', size: 7 } } })
+  await run($, 'n1')
+  const drawn = await text(await $.ui.mount(toolUse('n1', CMD) as never))
+  expect(drawn).toContain('The result files do not agree with each other')
+  expect(drawn).not.toContain('too large')
+  expect(cli.reads.filter(r => r.endsWith('data.json'))).toEqual([])
+})
+
+test('each file is read at the resolved path that was checked', async ($, on) => {
+  const files = result('s1')
+  const real = '/real/store'
+  const cli = fakeWorld(
+    on,
+    Object.fromEntries(Object.entries(files).map(([k, v]) => [k.replace(ROOT, real), v])),
+    {
+      stats: {
+        [ROOT]: { kind: 'dir', realPath: real },
+        [`${ROOT}/s1/meta.json`]: { kind: 'file', size: files[`${ROOT}/s1/meta.json`].length, realPath: `${real}/s1/meta.json` },
+        [`${ROOT}/s1/data.json`]: { kind: 'file', size: files[`${ROOT}/s1/data.json`].length, realPath: `${real}/s1/data.json` },
+      },
+    },
+  )
+  await run($, 's1')
+  expect(await text(await $.ui.mount(toolUse('s1', CMD) as never))).toContain('SECRET-ALICE')
+  expect(cli.reads).toEqual([`${real}/s1/meta.json`, `${real}/s1/data.json`])
+})
+
+test('a CLI with --result-view gets it, an older one keeps --view=', async ($, on) => {
+  const cli = fakeWorld(on, result('rv1'), { version: '0.98.0' })
+  await run($, 'rv1')
+  const tree = await $.ui.mount(toolUse('rv1', CMD) as never)
+  await text(tree)
+  expect(cli.runs.some(a => a.join(' ') === 'datatug daemon url --result rv1 --result-view table --format json')).toBe(true)
+  expect(cli.runs.some(a => a.some(x => x.startsWith('--view=')))).toBe(false)
 })

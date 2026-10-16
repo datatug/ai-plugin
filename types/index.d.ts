@@ -125,7 +125,7 @@ export type Bag = { isEnabled: boolean; entries: BagEntry[] }
 // What a linked card shows: a link (status ok, its href kept in memory only) or one of the messages.
 export type LinkState = {
   req: string
-  status: 'checking' | 'ok' | 'down' | 'pending' | 'old-cli' | 'dev' | 'unavailable' | 'no-result'
+  status: 'checking' | 'ok' | 'down' | 'pending' | 'old-cli' | 'dev' | 'unavailable' | 'no-result' | 'policy-principal'
   at: number
   isStale?: boolean
 }
@@ -156,7 +156,7 @@ export type CardMeta = {
 
 // One result card in the chat, keyed by the tool call's id.
 export type CardState = {
-  status: 'none' | 'ready' | 'load' | 'loading' | 'expired' | 'not-found' | 'incomplete' | 'unreadable' | 'too-large' | 'version' | 'no-locator' | 'fallback'
+  status: 'none' | 'ready' | 'load' | 'loading' | 'expired' | 'not-found' | 'incomplete' | 'unreadable' | 'too-large' | 'inconsistent' | 'version' | 'no-locator' | 'fallback'
   // The result id (the tool call's id made safe), '' before the call ran.
   id: string
   view: CardView
