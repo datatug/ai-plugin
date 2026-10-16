@@ -283,7 +283,7 @@ test('Context bag Ask Claude puts the checked items into the prompt', async ($, 
   expect(fills).toHaveLength(1)
   expect(fills[0]).toContain('My DataTug context bag')
   expect(fills[0]).toContain('people.n = ')
-  expect(fills[0]).toContain('My question: ')
+  expect(fills[0].includes('My question')).toBe(false)
   expect(fills[0]).toContain('append')
 })
 
@@ -817,4 +817,41 @@ test('Referenced by counts distinct tables', () => {
   expect(tablesCount([])).toBe('0 tables')
   expect(tablesCount([t('Invoice')])).toBe('1 table')
   expect(tablesCount([t('Invoice'), t('invoice'), t('Track')])).toBe('2 tables')
+})
+
+test('a table added from the scan of a project with local and prod copies is asked against local, never prod', async ($, on) => {
+  const tbl = { name: 'Artist', columns: [{ name: 'ArtistId', type: 'INTEGER', primaryKeyPosition: 1 }] }
+  const src = (id: string) => ({ id, driver: 'sqlite3', schemas: [{ name: 'main', tables: [tbl] }] })
+  const SHOW = JSON.stringify({ environments: [{ id: 'prod', sources: [src('chinook-prod')] }, { id: 'local', sources: [src('chinook-local')] }] })
+  const fills: string[] = []
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('session.cwd', () => ({ value: '/work' }) as never)
+  on('process.run', (_$, e) =>
+    ({ value: { exitCode: 0, stdout: JSON.stringify(e).includes('"show"') ? SHOW : '[{"id":"demo-project-1","title":"","origin":""}]', stderr: '' } }) as never)
+  on('prompt.fill', (_$, e) => {
+    fills.push(JSON.stringify(e))
+    return { isFilled: true } as never
+  })
+  on('fs.read', () => ({ value: '[{"ArtistId":1}]' }) as never)
+  on('ui.render', ($, e) => h($.ui.resolve(e).Text, {}, 'bottom') as never)
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '' }, text: '', ref: {} }) as never)
+  await $.command.run({ command: 'datatug', args: '' } as never)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 't7', command: 'datatug query run --db x --from Artist' } as never)
+  const chat = await $.ui.mount({
+    plugin: 'datatug', surface: 'terminal', component: 'ToolUse', requestId: 't7',
+    props: { tool_use_id: 't7', tool: 'Bash', input: {}, isRunning: false, isErrored: false, isInterrupted: false },
+  } as never)
+  await chat.press({ key: 'grid', link: { href: 'https://datatug.invalid/row/0' } } as never)
+  const pane = await $.ui.mount({
+    plugin: 'datatug', surface: 'terminal', component: 'Pane', requestId: 'datatug', props: { bodyColumns: 80 },
+  } as never)
+  await pane.press({ key: 'col:ArtistId' } as never)
+  await pane.press({ key: 'cbag-col' } as never)
+  await pane.press({ key: 'column-table' } as never)
+  await pane.press({ key: 'tbag-table' } as never)
+  await pane.press({ key: 'bag-ask' } as never)
+  const ask = fills.join('')
+  expect(ask).toContain('table Artist (database datatug://demo-project-1/chinook-local?env=local, default: local)')
+  expect(ask.includes('chinook-prod')).toBe(false)
+  expect(ask.includes('My question')).toBe(false)
 })

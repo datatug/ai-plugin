@@ -16,7 +16,7 @@ datatug query run --db 'datatug://<project>/<db-id>?env=<ENV>' --from <Table> --
 - Never look for connection strings or read `~/.datatug`; you do not need them. The CLI resolves the reference.
 - The environment is the one in the reference; with none, `local`.
 - "Top N" or "first N" with no ranking column named means the first N rows: `--limit N`. Do not ask what "top" means.
-- The rows appear in the card the mod draws, not to you. Reply in one line; do not repeat rows.
+- The rows appear in the card the mod draws, not to you. Reply in one line saying the result is in the card; do not repeat rows and do not offer to read, list or paste them.
 - Do not list saved queries first, and do not ask the user anything unless the database is unknown and the project has several.
 
 ## Saved queries
