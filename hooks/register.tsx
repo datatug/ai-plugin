@@ -6,7 +6,7 @@ import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, bigIntegers, 
 import { CARD_MIN_CLI_VERSION, LEGACY_TEXT, MAX_DATA_BYTES, MAX_META_BYTES, OPEN_MIN_CLI_VERSION, RESULT_VIEW_MIN_CLI_VERSION, STATE_TEXT, TEXT, UNAVAILABLE_TEXT, VIEWS, VIEW_LABELS, fallbackOf, isRef, readData, readLocator, readMeta, resultId, resultSummary, resultUrlArgs, statLandsAt, storeProblem, uiCommand } from '../lib/results.js'
 import { isProjectView } from '../lib/command.js'
 import { FAILED_TEXT, STORE_TEXT, bashNamesStore, classify, normalizePath, pathInStore } from '../lib/bash.js'
-import { headerLine, nextSort, sortedOrder, toCsv, toJson } from '../lib/rows.js'
+import { columnPage, headerLine, historyKeys, historyPick, nextSort, resultTitle, sortedOrder, toCsv, toJson } from '../lib/rows.js'
 import { stripUnsafe } from '../lib/text.js'
 import { canDrawPane } from '../lib/view.js'
 import { registerProject } from './project.js'
@@ -20,6 +20,10 @@ const MAX_ROWS = 2000
 const MAX_CELL = 200
 const CHAT_ROWS = 20
 const MAX_COLS = 10
+// A panel narrower than this many columns shows the Record view until the person picks a view.
+const NARROW_COLS = 60
+// The results the panel can switch between: the newest of the cards that hold rows.
+const MAX_HISTORY = 5
 const BASE = 'https://datatug.invalid/'
 
 const results = atom({ plugin: 'datatug', key: 'results' } as const, {} as Record<string, GridResult>)
@@ -82,9 +86,11 @@ const cards = atom({ plugin: 'datatug', key: 'cards' } as const, NO_CARD)
 // The cards that hold rows, oldest first: at most MAX_CARDS (a family cannot be listed).
 const cardRows = atom({ plugin: 'datatug', key: 'cardRows' } as const, [] as string[])
 const MAX_CARDS = 10
-// The result the person closed in the panel (its card key), or ''. The panel shows no "Latest result"
-// while the newest card is that one; the transcript row keeps its card, and a newer result shows again.
-const latestClosed = atom({ plugin: 'datatug', key: 'latestClosed' } as const, '')
+// The results the person closed in the panel (their card keys; the transcript rows keep their cards).
+// A closed result is not in the panel's history; loading it again brings it back.
+const latestClosed = atom({ plugin: 'datatug', key: 'latestClosed' } as const, [] as string[])
+// The result the panel shows, a card key, or '' for the newest. A new result selects the newest.
+const latestShown = atom({ plugin: 'datatug', key: 'latestShown' } as const, '')
 // Whether the person has been told, in the transcript, where the result card is: said once per session.
 const noticeShown = atom({ plugin: 'datatug', key: 'noticeShown' } as const, false)
 
@@ -1242,14 +1248,17 @@ async function loadCard($: Host, key: string, id: string): Promise<CardMeta | nu
     return null
   }
   const canOpen = canOpenElsewhere()
-  await update($, card, cur => ({ ...cur, id, status: 'ready', view: 'table', row: 0, shown: 20, page: 0, meta: m.meta, data, canOpen, link: undefined, sort: undefined }))
+  await update($, card, cur => ({ ...cur, id, status: 'ready', view: 'table', row: 0, shown: 20, page: 0, meta: m.meta, data, canOpen, link: undefined, sort: undefined, colPage: 0, picked: false, cell: undefined }))
   let dropped: string[] = []
   await update($, cardRows, cur => {
     const next = [...cur.filter(k => k !== key), key]
     dropped = next.slice(0, Math.max(0, next.length - MAX_CARDS))
     return next.slice(-MAX_CARDS)
   })
-  for (const old of dropped) await update($, memberOf(cards, { requestId: old }), cur => (cur.status === 'ready' ? { ...cur, status: 'load', data: undefined, link: undefined } : cur))
+  for (const old of dropped) await update($, memberOf(cards, { requestId: old }), cur => (cur.status === 'ready' ? { ...cur, status: 'load', data: undefined, link: undefined, cell: undefined } : cur))
+  // A new result is shown in the panel, even one the person had closed.
+  await update($, latestClosed, cur => cur.filter(k => k !== key && !dropped.includes(k)))
+  await update($, latestShown, () => '')
   return m.meta
 }
 
@@ -1302,6 +1311,9 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { Box, Text, Button, Markdown, Link, Code } = $.ui.resolve(e as never) as any
   const key = e.requestId
+  // A narrow panel opens on the Record view (a table cannot fit) until the person picks a view.
+  const narrow = hotkeys && e.props.bodyColumns !== undefined && e.props.bodyColumns < NARROW_COLS
+  const view = card.view === 'table' && card.picked !== true && narrow ? 'record' : card.view
   const fp = fingerprint(key)
   const k = (...parts: (string | number)[]) => `qr:${fp}:${parts.join(':')}`
   const set = (fn: (c: CardState) => CardState) => update($, memberOf(cards, { requestId: key }), fn)
@@ -1360,6 +1372,8 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
   let linkLen = 0
   let checkNode: unknown = null
   let cmdSection: unknown = null
+  // (The link follows the card's own view, which the transcript row shares; a narrow panel's default
+  // Record view is a drawing choice only, so the two never ask for different links.)
   const openLabel = card.view === 'record' ? 'Open row in DataTug ↗' : 'Open in DataTug ↗'
   const command = uiCommand(card.id)
   if (card.canOpen === true && command !== null) {
@@ -1416,13 +1430,14 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
 
   // The loaded rows in the sort order (a copy of the order only; the stored rows are not touched), paged
   // after sorting. `place[n]` is a row's place in the loaded order, which the Record view uses.
-  const cols = ordered.slice(0, MAX_COLS)
-  const sortCol = card.sort !== undefined && cols.includes(card.sort.col) ? card.sort : undefined
+  const win = columnPage(ordered.length, card.colPage ?? 0, MAX_COLS)
+  const cols = ordered.slice(win.start, win.end)
+  const sortCol = card.sort !== undefined && ordered.includes(card.sort.col) ? card.sort : undefined
   const place = sortedOrder(data.rows, sortCol === undefined ? -1 : data.columns.indexOf(sortCol.col), sortCol !== undefined && NUMERIC.has(typeOf(sortCol.col)), sortCol?.desc === true)
   const marker = (c: string) => (sortCol?.col === c ? (sortCol.desc ? ' ▼' : ' ▲') : '')
 
   let body: unknown
-  if (card.view === 'table') {
+  if (view === 'table') {
     const start = card.page * 50
     const shown = place.slice(start, start + card.shown).map(i => data.rows[i])
     const canMore = card.page === 0 && card.shown < 50 && total > card.shown
@@ -1430,16 +1445,55 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
     // view), never a link, so no placeholder address is ever drawn or hovered. Values are plain Text.
     const num = Math.max(2, String(total).length)
     const widths = cols.map(c => Math.min(28, Math.max(c.length + marker(c).length, 3, ...shown.map(r => gridText(at(r, c)).length))) + 1)
+    // Boxes shrink to the room there is: when the columns would not fit the panel (or, in the transcript,
+    // 120 columns) any text may be cut on screen, so every value is a Button then, not only the cut ones.
+    const squeezed = num + 1 + widths.reduce((a, b) => a + b, 0) > (e.props.bodyColumns ?? 120) - 4
     const gcell = (gk: string, w: number, child: unknown, right = false) => (
       <Box key={gk} width={w} flexShrink={1} minWidth={0} justifyContent={right ? 'flex-end' : 'flex-start'} paddingRight={1}>
         {child}
       </Box>
     )
+    // One value in full, as text: web addresses stay broken so no terminal links them. Copy gives the
+    // value to the person's clipboard; it goes nowhere else (no log, toast, notice or summary).
+    const sel = card.cell
+    const selValue = sel === undefined || sel.row >= total || !data.columns.includes(sel.col) ? null : at(data.rows[sel.row], sel.col)
+    const copyCell = async () => {
+      const done = await ($.ui as unknown as { copy: (a: { text: string; surface: string }) => Promise<{ isCopied: boolean }> }).copy({ text: selValue ?? '', surface: e.surface }).catch(() => ({ isCopied: false }))
+      void $.ui.toast(done.isCopied ? 'Copied the value' : 'Could not copy the value; this surface has no clipboard')
+    }
+    const openCell =
+      sel === undefined || selValue === null ? null : (
+        <Box key={k('cell-box')} flexDirection="column" borderStyle="round" borderDimColor paddingX={1} marginTop={1}>
+          <Box flexDirection="row" gap={2} flexWrap="wrap" justifyContent="space-between">
+            <Text bold dimColor>{gridText(`${sel.col} · row ${sel.row + 1}`, 80)}</Text>
+            <Box flexDirection="row" gap={2}>
+              <Button key={k('cell-copy')} plain onPress={() => void copyCell()}>
+                Copy
+              </Button>
+              <Button key={k('cell-close')} plain onPress={() => set(cur => ({ ...cur, cell: undefined }))}>
+                Close
+              </Button>
+            </Box>
+          </Box>
+          <Text>{gridText(selValue, 4000)}</Text>
+          {cell(selValue).length > 4000 && <Text dimColor>The first 4000 characters are shown; Copy copies the whole value.</Text>}
+        </Box>
+      )
     body = (
       <Box flexDirection="column" key={k('grid')}>
-        {ordered.length > cols.length && (
+        {ordered.length > MAX_COLS && (
           <Box flexDirection="row" gap={2} flexWrap="wrap">
-            <Text dimColor>{`First ${cols.length} of ${ordered.length} columns shown; the Record view shows them all.`}</Text>
+            <Text dimColor>{win.end - win.start === 1 ? `Column ${win.end} of ${ordered.length}` : `Columns ${win.start + 1}-${win.end} of ${ordered.length}`}</Text>
+            {win.page > 0 && (
+              <Button key={k('colprev')} onPress={() => set(c => ({ ...c, colPage: win.page - 1 }))}>
+                ◀ columns
+              </Button>
+            )}
+            {win.page < win.pages - 1 && (
+              <Button key={k('colnext')} onPress={() => set(c => ({ ...c, colPage: win.page + 1 }))}>
+                columns ▶
+              </Button>
+            )}
             {checkNode}
           </Box>
         )}
@@ -1461,15 +1515,33 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
         {shown.map((r, i) => (
           <Box key={k('r', start + i)} flexDirection="row">
             <Box width={num + 1} flexShrink={0} justifyContent="flex-end" paddingRight={1}>
-              <Button key={k('row', start + i)} plain onPress={() => set(c => ({ ...c, view: 'record', row: place[start + i] }))}>
+              <Button key={k('row', start + i)} plain onPress={() => set(c => ({ ...c, view: 'record', picked: true, row: place[start + i] }))}>
                 {String(place[start + i] + 1)}
               </Button>
             </Box>
-            {cols.map((c, j) => (
-              gcell(k('c', start + i, j), widths[j], <Text wrap="truncate-end">{gridText(at(r, c))}</Text>, NUMERIC.has(typeOf(c)))
-            ))}
+            {cols.map((c, j) => {
+              const shown = gridText(at(r, c))
+              // A value the grid cuts is a Button: a press opens the whole value under the grid. A Button's
+              // text wraps, so its label is cut here and the Box holds it to one line.
+              const cut = cell(at(r, c)).length > (squeezed ? 0 : widths[j] - 1)
+              return gcell(
+                k('c', start + i, j),
+                widths[j],
+                cut ? (
+                  <Box height={1} overflow="hidden">
+                    <Button key={k('cell', start + i, j)} plain onPress={() => set(cur => ({ ...cur, cell: { row: place[start + i], col: c } }))}>
+                      {shown.length > widths[j] - 1 ? `${shown.slice(0, Math.max(1, widths[j] - 2))}…` : shown}
+                    </Button>
+                  </Box>
+                ) : (
+                  <Text wrap="truncate-end">{shown}</Text>
+                ),
+                NUMERIC.has(typeOf(c)),
+              )
+            })}
           </Box>
         ))}
+        {openCell}
         {canMore && (
           <Box marginTop={1}>
             <Button key={k('more')} plain onPress={() => set(c => ({ ...c, shown: 50 }))}>
@@ -1493,7 +1565,7 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
         )}
       </Box>
     )
-  } else if (card.view === 'record') {
+  } else if (view === 'record') {
     const index = Math.min(Math.max(0, card.row), Math.max(0, total - 1))
     const r = data.rows[index] ?? []
     const step = (by: number) => set(c => ({ ...c, row: Math.min(Math.max(0, c.row + by), Math.max(0, total - 1)) }))
@@ -1534,7 +1606,7 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
         })}
       </Box>
     )
-  } else if (card.view === 'columns') {
+  } else if (view === 'columns') {
     const w = { n: 4, name: Math.min(28, Math.max(6, ...ordered.map(n => n.length)) + 2), type: 10, decl: 14, nul: 9, key: 6 }
     body = (
       <Box flexDirection="column">
@@ -1580,7 +1652,7 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
         {dbRef0 === null && noProject}
       </Box>
     )
-  } else if (card.view === 'sources') {
+  } else if (view === 'sources') {
     const w = { n: 4, rel: Math.min(32, Math.max(8, ...meta.participants.map(p => nameOf(p.schema, p.relation).length)) + 2), kind: 9, alias: Math.min(16, Math.max(7, ...meta.participants.map(p => p.alias.length)) + 2), role: 7 }
     body = (
       <Box flexDirection="column">
@@ -1692,14 +1764,14 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
           {linkNode !== null && (
             <Box flexDirection="row" gap={2} flexShrink={0}>
               {linkNode}
-              {card.view !== 'table' || ordered.length <= MAX_COLS ? checkNode : null}
+              {view !== 'table' || ordered.length <= MAX_COLS ? checkNode : null}
             </Box>
           )}
         </Box>
         <Box flexDirection="row" flexWrap="wrap" gap={1}>
           {VIEW_KEYS.map(v => (
-            <Button key={k('view', v)} plain onPress={() => set(c => ({ ...c, view: v }))}>
-              {`${card.view === v ? '●' : '○'} ${VIEW_LABELS[v]}`}
+            <Button key={k('view', v)} plain onPress={() => set(c => ({ ...c, view: v, picked: true }))}>
+              {`${view === v ? '●' : '○'} ${VIEW_LABELS[v]}`}
             </Button>
           ))}
         </Box>
@@ -1949,7 +2021,7 @@ export const register: Register = (on, options) => {
   // optional ones that appear on demand (the record card).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Input, Link } = $.ui.resolve(e)
-    const [all, latestKeys, closedKey] = await Promise.all([read($, results), read($, cardRows), read($, latestClosed)])
+    const [all, cardKeys, closedKeys, wantShown] = await Promise.all([read($, results), read($, cardRows), read($, latestClosed), read($, latestShown)])
     const v = await read($, view)
     const ps = await read($, projects)
     const proj = await read($, project)
@@ -3063,12 +3135,23 @@ export const register: Register = (on, options) => {
 
     // The newest result card, the one the transcript row also draws, from the same code and the same
     // member, so a press here and a press there are one state. Its views have no digit keys.
-    const latest = latestKeys.at(-1)
-    const latestState = latest === undefined || latest === closedKey ? NO_CARD : await read($, memberOf(cards, { requestId: latest }))
-    // "✕" closes the section (the transcript row keeps its card and can show it again by Load), and so
-    // does the key x. Not `plain`: a plain Button draws its hotkey as an "x:" prefix, a bracketed one
-    // draws the label alone, so the one symbol is both the icon and the key.
-    const closeLatest = () => update($, latestClosed, () => latest ?? '')
+    const history = historyKeys(cardKeys, closedKeys, MAX_HISTORY)
+    const latest = historyPick(history, wantShown)
+    const latestState = latest === undefined ? NO_CARD : await read($, memberOf(cards, { requestId: latest }))
+    // "✕" closes the shown result alone (the transcript row keeps its card and can show it again by
+    // Load), and so does the key x. Not `plain`: a plain Button draws its hotkey as an "x:" prefix, a
+    // bracketed one draws the label alone, so the one symbol is both the icon and the key.
+    const closeLatest = () => {
+      if (latest === undefined) return
+      const rest = history.filter(k => k !== latest)
+      const next = rest[Math.min(history.indexOf(latest), rest.length - 1)] ?? ''
+      void update($, latestClosed, cur => [...cur.filter(k => k !== latest), latest].slice(-MAX_CARDS * 2))
+      void update($, latestShown, () => next)
+    }
+    const goHistory = (by: number) => {
+      const to = history[Math.min(Math.max(0, history.indexOf(latest as string) + by), history.length - 1)]
+      void update($, latestShown, () => to ?? '')
+    }
     const latestCard =
       latest === undefined || latestState.status === 'none' ? null : (
         <Box key="card-latest" flexDirection="column" borderStyle="round" paddingX={1}>
@@ -3076,10 +3159,26 @@ export const register: Register = (on, options) => {
             <Text bold dimColor>
               Latest result
             </Text>
-            <Button key="latest-close" hotkey="x" role="dismiss" label="Close" onPress={() => void closeLatest()}>
+            <Button key="latest-close" hotkey="x" role="dismiss" label="Close" onPress={() => closeLatest()}>
               ✕
             </Button>
           </Box>
+          {history.length > 1 && (
+            <Box key="latest-switch" flexDirection="row" gap={1} alignItems="center">
+              <Button key="latest-prev" plain onPress={() => goHistory(-1)}>
+                ◀
+              </Button>
+              <Text dimColor>{`${history.indexOf(latest) + 1}/${history.length}`}</Text>
+              <Button key="latest-next" plain onPress={() => goHistory(1)}>
+                ▶
+              </Button>
+              {latestState.meta !== undefined && (
+                <Box flexShrink={1} minWidth={0}>
+                  <Text dimColor wrap="truncate-end">{gridText(resultTitle(latestState.meta), 80)}</Text>
+                </Box>
+              )}
+            </Box>
+          )}
           {await drawCard($ as Host, { requestId: latest, surface: e.surface, component: e.component, props: { bodyColumns: (e.props as { bodyColumns?: number }).bodyColumns } }, null, latestState, true)}
         </Box>
       )

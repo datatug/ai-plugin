@@ -174,6 +174,12 @@ export type CardState = {
   link?: LinkState
   // The Table view's sort: the column name and whether it is descending; absent for the loaded order.
   sort?: { col: string; desc: boolean }
+  // The Table view's column window: which page of 10 columns shows (0 = the first).
+  colPage?: number
+  // Whether the person chose a view; until then a narrow panel shows the Record view.
+  picked?: boolean
+  // The Table cell opened in full under the grid: its row in the loaded order and its column name.
+  cell?: { row: number; col: string }
 }
 
 declare module 'claude-code' {
@@ -191,7 +197,8 @@ declare module 'claude-code' {
     links: Record<string, LinkState>
     cards: StateFamily<CardState>
     cardRows: string[]
-    latestClosed: string
+    latestClosed: string[]
+    latestShown: string
     noticeShown: boolean
   }
   }
