@@ -86,6 +86,9 @@ export type Cli = {
   bash: string[]
   bashAnswer: (cmd: string) => unknown
   renders: Record<string, number>
+  // The `output` prop each ToolUse and ToolResult row reached the engine with.
+  outputs: Record<string, unknown>
+  resultOutputs: Record<string, unknown>
   // The transcript lines the plugin logged, and the isExpanded each ToolGroup reached the engine with.
   logs: string[]
   placed: boolean
@@ -145,6 +148,8 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
     bash: [],
     bashAnswer: () => ({ result: { stdout: '{"resultFiles":{"version":1},"rowsKept":3,"hasMore":false,"columns":5}\n', stderr: '' }, text: '', ref: {} }),
     renders: {},
+    outputs: {},
+    resultOutputs: {},
     logs: [],
     placed: true,
     opened: [],
@@ -172,6 +177,8 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
   on('ui.render', (_$: any, e: any) => {
     cli.renders[e.requestId] = (cli.renders[e.requestId] ?? 0) + 1
     if (e.component === 'ToolGroup') cli.groups.push(e.props.isExpanded)
+    if (e.component === 'ToolUse') cli.outputs[e.requestId] = e.props.output
+    if (e.component === 'ToolResult') cli.resultOutputs[e.requestId] = e.props.output
     return h(_$.ui.resolve(e).Text, {}, 'row')
   })
   on('process.run', (_$: unknown, e: { argv: string[] }) => {
