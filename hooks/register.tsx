@@ -374,8 +374,8 @@ export function bagPrompt(entries: BagEntry[], projectId: string | null, openDb 
     `My DataTug context bag${where}:\n${lines.join('\n')}\n\n` +
     `Answer by running this at once, without asking and without loading skills: ${shape}\n` +
     `Quote the reference as shown; use --db with it only (never --project with --db). Never look for connection strings and never read the DataTug store. ` +
-    `The rows appear in the panel card, not to you. "Top N" with no ranking column named means the first N rows (--limit N). The environment is the one in the reference. ` +
-    `Ask only if the database is not recorded and the project has several. Then reply with one line saying the result is in the panel card; do not offer to read, list or paste rows.\n\n`
+    `The rows appear in the card in the chat, not to you. "Top N" with no ranking column named means the first N rows (--limit N). The environment is the one in the reference. ` +
+    `Ask only if the database is not recorded and the project has several. Then reply with one line saying the result is in the card above; do not offer to read, list or paste rows.\n\n`
   )
 }
 
