@@ -2581,7 +2581,7 @@ export const register: Register = (on, options) => {
           </Box>
         </Box>
         {bag.entries.length === 0 ? (
-          <Text dimColor>Empty. Open a record and press Add to 🛒, or 🛒 next to a field.</Text>
+          <Text dimColor>Empty. Use 🛒 to add items.</Text>
         ) : (
           <Box flexDirection="column" gap={1}>
             {bag.entries.map(entry => (
