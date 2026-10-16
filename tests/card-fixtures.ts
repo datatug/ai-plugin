@@ -78,6 +78,9 @@ export type Cli = {
   status: unknown
   runs: string[][]
   spawns: string[][]
+  // What each `query results annotate` was given on standard input (argv is in `runs`), and how it ends.
+  stdins: { argv: string[]; stdin: string | undefined; env: Record<string, string> | undefined }[]
+  annotate: 'ok' | 'unknown-command' | 'fail' | 'throw'
   reads: string[]
   files: Record<string, string>
   stats: Record<string, { kind: 'file' | 'dir'; size?: number; realPath?: string }>
@@ -142,6 +145,8 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
     },
     runs: [],
     spawns: [],
+    stdins: [],
+    annotate: 'ok',
     reads: [],
     files,
     stats: {},
@@ -160,6 +165,8 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
     capture: '[{"name":"SECRET-ALICE"}]',
     ...over,
   }
+  // The engine's bottom for a prompt: it enters as received.
+  on('prompt.submit', (_$: unknown, e: { text: string; origin?: unknown }) => ({ text: e.text, ...(e.origin === undefined ? {} : { origin: e.origin }) }))
   on('session.cwd', () => ({ value: '/work' }))
   on('session.surfaces', () => ({ value: ['terminal'] }))
   on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'HOME' ? '/home/u' : undefined }))
@@ -187,9 +194,16 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
     if (e.component === 'ToolResult') cli.resultOutputs[e.requestId] = e.props.output
     return h(_$.ui.resolve(e).Text, {}, 'row')
   })
-  on('process.run', (_$: unknown, e: { argv: string[] }) => {
+  on('process.run', (_$: unknown, e: { argv: string[]; init?: { stdin?: string; env?: Record<string, string> } }) => {
     const a = e.argv.slice(1)
     cli.runs.push(e.argv)
+    if (a.join(' ').startsWith('query results annotate ')) {
+      cli.stdins.push({ argv: e.argv, stdin: e.init?.stdin, env: e.init?.env })
+      if (cli.annotate === 'throw') return { deny: 'cannot start' }
+      if (cli.annotate === 'unknown-command') return { value: { exitCode: 1, stdout: '', stderr: 'unknown command "annotate" for "datatug query results"' } }
+      if (cli.annotate === 'fail') return { value: { exitCode: 3, stdout: '', stderr: 'no such result' } }
+      return { value: { exitCode: 0, stdout: `{"id":"${a[4]}","truncated":false,"bytes":1}\n`, stderr: '' } }
+    }
     const ok = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '' } })
     const t = a.join(' ')
     if (t === '--version') return cli.version instanceof Error ? { deny: cli.version.message } : ok(`${cli.version}\n`)
