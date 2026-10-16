@@ -4,6 +4,7 @@ import type { Register } from 'claude-code'
 import { MIN_CLI_VERSION, VERSION_ARGS, isOlder, missingCliText, parseVersion, tooOldText } from '../lib/cli.js'
 import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, bigIntegers, fingerprint, isSameHost, isUnknownCommand, parseDevHost, readLink, recordKey, sourceUnavailableText, urlArgs } from '../lib/links.js'
 import { CARD_MIN_CLI_VERSION, LEGACY_TEXT, MAX_DATA_BYTES, MAX_META_BYTES, OPEN_MIN_CLI_VERSION, RESULT_VIEW_MIN_CLI_VERSION, STATE_TEXT, TEXT, UNAVAILABLE_TEXT, VIEWS, VIEW_LABELS, fallbackOf, isRef, readData, readLocator, readMeta, resultId, resultSummary, resultUrlArgs, statLandsAt, storeProblem, uiCommand } from '../lib/results.js'
+import { ANNOTATE_MIN_CLI_VERSION, annotateArgs, keptPrompt } from '../lib/annotate.js'
 import { isProjectView } from '../lib/command.js'
 import { FAILED_TEXT, STORE_TEXT, bashNamesStore, classify, normalizePath, pathInStore } from '../lib/bash.js'
 import { columnPage, headerLine, historyKeys, historyPick, nextSort, resultTitle, sortedOrder, toCsv, toJson } from '../lib/rows.js'
@@ -93,6 +94,9 @@ const latestClosed = atom({ plugin: 'datatug', key: 'latestClosed' } as const, [
 const latestShown = atom({ plugin: 'datatug', key: 'latestShown' } as const, '')
 // Whether the person has been told, in the transcript, where the result card is: said once per session.
 const noticeShown = atom({ plugin: 'datatug', key: 'noticeShown' } as const, false)
+// The latest prompt the person submitted (their own words, not a notification or a peer's message), kept in
+// session state for the next result to be stored with. It is never drawn, logged, toasted or sent to the model.
+const lastPrompt = atom({ plugin: 'datatug', key: 'lastPrompt' } as const, '')
 
 // Every datatug call the mod makes names the mod as its caller, so the CLI keeps the local DataTug
 // agent (the daemon the web links open) running as a side effect of the cards' own calls.
@@ -1195,6 +1199,28 @@ async function sessionMode($: Host): Promise<'new' | 'legacy'> {
 // Whether the CLI takes `--result-view` (a version that cannot be read is taken as the older flag).
 const hasResultView = () => bashVersion !== null && !isOlder(bashVersion, parseVersion(RESULT_VIEW_MIN_CLI_VERSION) as number[])
 
+// Whether the CLI has `query results annotate` (a version that cannot be read is a development build and counts as new).
+const canAnnotate = () => bashVersion === null || !isOlder(bashVersion, parseVersion(ANNOTATE_MIN_CLI_VERSION) as number[])
+
+// Results already handed their prompt: once per result.
+const annotated = new Set<string>()
+
+// Stores the person's latest prompt with a result, through the CLI's standard input: never an argument or
+// the environment. Best effort and silent: a CLI without the verb, a failure or a timeout is dropped, with
+// no retry, and nothing of the prompt or the CLI's answer is read, logged or shown.
+async function annotateResult($: Host, id: string): Promise<void> {
+  try {
+    if (!canAnnotate() || annotated.has(id)) return
+    annotated.add(id)
+    const text = await read($, lastPrompt)
+    if (text === '') return
+    const cwd = await $.session.cwd().catch(() => undefined)
+    await $.process.run(['datatug', ...annotateArgs(id)], { ...(cwd === undefined ? {} : { cwd }), stdin: text, timeoutMs: 10000, env: cliEnv() })
+  } catch {
+    // the prompt is a convenience; the card does not depend on it
+  }
+}
+
 const canOpenElsewhere = () => bashVersion === null || !isOlder(bashVersion, parseVersion(OPEN_MIN_CLI_VERSION) as number[])
 
 // Finds a result's files by asking the CLI (`query results locate`, never the model's command or
@@ -1826,6 +1852,17 @@ export const register: Register = (on, options) => {
     return { text: 'DataTug panel opened.' }
   }).catch(() => ({ text: 'The DataTug panel could not be opened. Run `/datatug` again, or `/datatug project` for a text summary of the project in this folder.' }))
 
+  // Remembers the person's own prompts (nothing else) for annotateResult. The prompt passes on unchanged.
+  on('prompt.submit', async ($, e, next) => {
+    try {
+      const kept = keptPrompt(e.text, e.origin)
+      if (kept !== null) await update($, lastPrompt, () => kept)
+    } catch {
+      // a prompt that cannot be kept is not worth failing the person's Enter
+    }
+    return next(e)
+  })
+
   // The model's own file tools never reach the result store or the capture folder. Judged on the
   // model's input, before any rewrite; a guard that fails denies.
   const guarded: [string, string[]][] = [
@@ -1873,7 +1910,11 @@ export const register: Register = (on, options) => {
       }
       // Never the tool's stdout for paths: the mod asks the CLI where the files are.
       const meta = await loadCard($ as Host, key, id)
-      if (meta !== null) await announceCard($ as Host)
+      if (meta !== null) {
+        await announceCard($ as Host)
+        // After the card is ready and not waited for: the card never waits on the prompt.
+        void annotateResult($ as Host, id)
+      }
       return { result: { ...out, stdout: meta === null ? TEXT.ran : resultSummary(meta) } } as typeof ran
     }
     // The plain form, private capture: the rows go to a file of the mod's, never through Bash's output.

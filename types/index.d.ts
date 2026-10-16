@@ -200,6 +200,7 @@ declare module 'claude-code' {
     latestClosed: string[]
     latestShown: string
     noticeShown: boolean
+    lastPrompt: string
   }
   }
 }
