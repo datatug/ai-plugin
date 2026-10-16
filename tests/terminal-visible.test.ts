@@ -73,13 +73,12 @@ test('a running row of another command shows no loading line', async ($, on) => 
   expect(await text(tree)).not.toContain('Loading result...')
 })
 
-test('each result leaves one constant transcript line: no path, id, row or command', async ($, on) => {
+test('the first result of a session leaves one constant transcript line, later ones none: no path, id, row or command', async ($, on) => {
   const cli = fakeWorld(on, { ...result('n1'), ...result('n2') })
   const lines = cli.logs
   await run($, 'n1')
   await run($, 'n2')
-  expect(lines).toHaveLength(2)
-  expect(lines[0]).toBe(lines[1])
+  expect(lines).toHaveLength(1)
   expect(lines[0]).toContain('ctrl+o')
   expect(lines[0]).toContain('ctrl+x tab')
   // The panel is opened for the person to focus, never with the keys taken from the prompt.
@@ -103,7 +102,7 @@ test('when the panel cannot be placed the line names /datatug instead of a key',
   expect(cli.logs[0]).not.toContain('ctrl+x tab')
 })
 
-test('the panel shows the newest result card with views on keys 1-5, sharing state with the transcript row', async ($, on) => {
+test('the panel shows the newest result card with views, sharing state with the transcript row', async ($, on) => {
   fakeWorld(on, { ...result('q1'), ...result('q2') })
   await run($, 'q1')
   await run($, 'q2')
@@ -112,10 +111,9 @@ test('the panel shows the newest result card with views on keys 1-5, sharing sta
   const pane = await $.ui.mount(PANE_ARGS as never)
   const before = await text(pane)
   expect(before).toContain('Latest result')
-  for (const [i, v] of ['Table', 'Record', 'Columns', 'Sources', 'Related'].entries()) {
-    expect(before).toContain(`"hotkey":"${i + 1}"`)
-    expect(before).toContain(v)
-  }
+  // No digit hotkeys: a plain Button would draw "1:".."5:" before each view and wrap the row.
+  for (const v of ['Table', 'Record', 'Columns', 'Sources', 'Related']) expect(before).toContain(v)
+  expect(before).not.toMatch(/"label":"[●○] \w+","hotkey"|"hotkey":"[1-5]"/)
   expect(before).toContain('SECRET-ALICE')
   // A press in the panel is the card's own state: the transcript row of that result follows, the other does not.
   const fp = (s: string) => {

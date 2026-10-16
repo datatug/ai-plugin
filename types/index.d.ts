@@ -137,6 +137,8 @@ export type CardMeta = {
   dataBytes: number
   db: { ref: string | null; project: string | null; env: string | null; source: string | null; driver: string }
   kind: string
+  // The saved query's id, for a saved query; null otherwise.
+  savedId: string | null
   rows: { kept: number; hasMore: boolean }
   columns: {
     name: string
@@ -170,6 +172,8 @@ export type CardState = {
   meta?: CardMeta
   data?: { columns: string[]; types: string[]; rows: (string | null)[][] }
   link?: LinkState
+  // The Table view's sort: the column name and whether it is descending; absent for the loaded order.
+  sort?: { col: string; desc: boolean }
 }
 
 declare module 'claude-code' {
@@ -188,6 +192,7 @@ declare module 'claude-code' {
     cards: StateFamily<CardState>
     cardRows: string[]
     latestClosed: string
+    noticeShown: boolean
   }
   }
 }
