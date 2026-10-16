@@ -1239,6 +1239,18 @@ async function loadCard($: Host, key: string, id: string): Promise<CardMeta | nu
   return m.meta
 }
 
+// One constant line in the transcript for each result, so a card the engine folded into a count line,
+// refused or failed to draw is never silent. `$.ui.log` is the transcript line (dim, not sent to the
+// model); `$.ui.notice` only puts a line under an open permission dialog. No path, id, row or command.
+const CARD_NOTICE = 'DataTug: the result is in the card under its command (ctrl+o expands folded tool calls).'
+function announceCard($: Host): void {
+  try {
+    ;($ as unknown as { ui: { log: (text: string) => void } }).ui.log(CARD_NOTICE)
+  } catch {
+    // a line that cannot be drawn is not worth failing the query for
+  }
+}
+
 // Whether a Bash row's command is one the mod gave result files: the plain form as the model wrote
 // it, or the rewritten one naming this result id.
 function isCardCommand(command: string, id: string): boolean {
@@ -1667,6 +1679,7 @@ export const register: Register = (on, options) => {
       }
       // Never the tool's stdout for paths: the mod asks the CLI where the files are.
       const meta = await loadCard($ as Host, key, id)
+      if (meta !== null) announceCard($ as Host)
       return { result: { ...out, stdout: meta === null ? TEXT.ran : resultSummary(meta) } } as typeof ran
     }
     // The plain form, private capture: the rows go to a file of the mod's, never through Bash's output.
@@ -1707,9 +1720,29 @@ export const register: Register = (on, options) => {
     })
     await update($, view, () => ({ current: parsed.id, selected: null, offset: 0 }))
     void ensureSchema($ as Host)
+    announceCard($ as Host)
     // Not `ran`'s ref or text: core would use the messages it already made for the model.
     return { result: { ...out, stdout: summary(parsed) } } as typeof ran
   }).catch(() => ({ deny: FAILED_TEXT }) as never)
+
+  // The engine folds a run of shell commands into one count line ("Ran 1 shell command") and draws no
+  // ToolUse row for them, so the card under the row would never be drawn. A group holding a DataTug
+  // query call is unfolded (`isExpanded`, the one ToolGroup prop a rewrite changes on screen); each
+  // row it unfolds into is a ToolUse the hook below draws the card under. The group reads the calls'
+  // own card members, so it is drawn again when a result lands.
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    if (e.props.isExpanded) return next(e)
+    const all = await read($, results)
+    let hasCard = false
+    for (const call of e.props.calls) {
+      if (call.tool !== 'Bash' || call.tool_use_id === undefined) continue
+      const id = resultId(call.tool_use_id)
+      const command = String(((call.input ?? {}) as { command?: unknown }).command ?? '')
+      const card = await read($, memberOf(cards, { requestId: call.tool_use_id }))
+      if (card.status !== 'none' || all[call.tool_use_id] !== undefined || (id !== null && isCardCommand(command, id))) hasCard = true
+    }
+    return next(hasCard ? { ...e, props: { ...e.props, isExpanded: true } } : e)
+  })
 
   // The grid in the chat, under the call's own row: a Markdown table whose first
   // column links each row; pressing a link opens that record's card in the pane.
@@ -1725,7 +1758,18 @@ export const register: Register = (on, options) => {
       // A row whose call ran with result files, after the state lost it (a reload, a resumed session).
       const input = (e.props.input ?? {}) as { command?: unknown }
       const id = resultId(e.requestId)
-      if (e.props.isRunning || id === null || !isCardCommand(String(input.command ?? ''), id)) return next(e)
+      if (id === null || !isCardCommand(String(input.command ?? ''), id)) return next(e)
+      // While the call runs the row already carries a short line, so the result's arrival is an update
+      // of a drawn row and not its first drawing.
+      if (e.props.isRunning) {
+        const { Box, Text } = $.ui.resolve(e)
+        return (
+          <Box flexDirection="column">
+            {await next(e)}
+            <Text dimColor>Loading result...</Text>
+          </Box>
+        )
+      }
       return drawCard($ as Host, e, await next(e), { ...NO_CARD, id, status: 'load' })
     }
     const limits = await read($, shownRows)

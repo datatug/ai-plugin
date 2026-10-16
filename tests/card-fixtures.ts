@@ -86,6 +86,9 @@ export type Cli = {
   bash: string[]
   bashAnswer: (cmd: string) => unknown
   renders: Record<string, number>
+  // The transcript lines the plugin logged, and the isExpanded each ToolGroup reached the engine with.
+  logs: string[]
+  groups: boolean[]
   // What the private capture file holds (the legacy path).
   capture: string
 }
@@ -140,6 +143,8 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
     bash: [],
     bashAnswer: () => ({ result: { stdout: '{"resultFiles":{"version":1},"rowsKept":3,"hasMore":false,"columns":5}\n', stderr: '' }, text: '', ref: {} }),
     renders: {},
+    logs: [],
+    groups: [],
     capture: '[{"name":"SECRET-ALICE"}]',
     ...over,
   }
@@ -148,6 +153,10 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
   on('env.get', (_$: unknown, e: { name: string }) => ({ value: e.name === 'HOME' ? '/home/u' : undefined }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.scroll', () => ({ value: {} }))
+  on('ui.log', (_$: unknown, e: { text: string }) => {
+    cli.logs.push(e.text)
+    return { value: undefined }
+  })
   on('ui.toast', (_$: unknown, e: unknown) => {
     cli.toasts.push(JSON.stringify(e))
     return { value: {} }
@@ -155,6 +164,7 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
   on('ui.copy', () => ({ value: cli.copied ? { isCopied: true } : { isCopied: false, reason: 'remote' } }))
   on('ui.render', (_$: any, e: any) => {
     cli.renders[e.requestId] = (cli.renders[e.requestId] ?? 0) + 1
+    if (e.component === 'ToolGroup') cli.groups.push(e.props.isExpanded)
     return h(_$.ui.resolve(e).Text, {}, 'row')
   })
   on('process.run', (_$: unknown, e: { argv: string[] }) => {

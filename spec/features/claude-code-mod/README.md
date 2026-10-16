@@ -259,6 +259,12 @@ The Table metadata, Table records and Record cards of a database that is a sourc
 **When** the person presses Record, Next ▶, Columns, Sources and Related on the second, and a side-panel Records in between
 **Then** each press draws only that view with `●` on it, Record shows row 2 after Next ▶, Columns shows the declared types and 🔑, and the first card is not drawn again.
 
+### AC: result-card-visible-in-terminal
+
+**Given** a `datatug query run` call whose row the engine would fold into a count line ("Ran 1 shell command"), or whose card state changes from loading to ready after the row was first drawn while the call ran
+**When** the result card loads
+**Then** a tool group holding that call is drawn expanded (`ToolGroup` `isExpanded`), so the `ToolUse` row and the card under it are drawn; a row drawn while the call runs shows "Loading result..." and the card replaces it in place; and one constant transcript line (`$.ui.log`, no path, id, row or command) says the result is in the card and that ctrl+o expands folded tool calls, so a card the engine did not draw is never silent. A group of other calls stays as the engine draws it.
+
 ### AC: result-card-opens-panel
 
 **Given** a card with a `datatug://` reference, while another database is open in the panel from a connection string
@@ -359,7 +365,9 @@ Running saved queries from the panel, running a query again from the result card
 
 ## Verification Status
 
-Web UI links, 2026-10-15, Claude Code 2.1.301 on macOS (arm64), `datatug` 0.86.0 installed: `claude plugin test` passes (222 tests across 12 files, the link cases among them); `claude plugin validate . --strict` passes. Against the live `datatug` 0.86.0 and a daemon started in a throwaway home: the argument lists the mod builds for the three kinds (a composite key and a key of 9007199254740993 among them) are accepted, the links printed pass the mod's checks once their `uiSupport` reads `available` (0.86.0 reports `pending` for all three, so the cards show the pending line today), a link with `DATATUG_UI_BASE` set is a development link unless `webDevHost` names it, and `db add` takes a SQLite file by path with `--name` and `--env local`. Not exercised: the links drawn in a live terminal, or opened in a browser.
+Web UI links, 2026-10-15, Claude Code 2.1.301 on macOS (arm64), `datatug` 0.86.0 installed: `claude plugin test` passes (222 tests across 12 files, the link cases among them); `claude plugin validate . --strict` passes. Against the live `datatug` 0.86.0 and a daemon started in a throwaway home: the argument lists the mod builds for the three kinds (a composite key and a key of 9007199254740993 among them) are accepted, the links printed pass the mod's checks once their `uiSupport` reads `available` (0.86.0 reports `pending` for all three, so the cards show the pending line today), a link with `DATATUG_UI_BASE` set is a development link unless `webDevHost` names it, and `db add` takes a SQLite file by path with `--name` and `--env local`. - Result card visible in the terminal, 2026-10-16, Claude Code 2.1.301 on macOS (arm64), `datatug` 0.100.0, plugin 0.3.3: `claude plugin test` passes (294 tests across 16 files; the new cases mount a `ToolGroup`, mount a row while the call runs and then run the call, and read the logged line); `claude plugin validate . --strict` passes. Live: one interactive session in a pty (`claude --plugin-dir <this folder>`, started in an already-trusted folder, `datatug` run through a throwaway-home shim), prompt asking for the top 5 rows of a table: the Bash row, the five-view card with its rows, and the one-line DataTug notice all appeared in the transcript. Not established: that the engine folds this call into "Ran 1 shell command" in a person's terminal (it did not fold in that run, and the ToolGroup hook was not seen in the debug log), so the cause of the missing card in 0.3.1 is not confirmed and the same run on 0.3.1 was not made; whether the `ToolGroup` unfold works live is covered by the test kit only.
+
+Not exercised: the links drawn in a live terminal, or opened in a browser.
 
 Panel port, 2026-10-15, Claude Code 2.1.301 on macOS (arm64), `datatug` 0.84.1 installed: `claude plugin test` passes (171 tests across 10 files, the earlier 114 among them with `/datatug` changed to `/datatug project`, and the panel's 25 prototype tests); `claude plugin validate . --strict` passes. Live with the released `datatug` 0.84.1 in `chinook-demo`: `claude --plugin-dir . -p "/datatug"` prints the one line naming `/datatug project`, and `-p "/datatug project"` prints the text summary. Checked through the test kit only: the panel was not drawn in a live terminal or the Desktop app, and none of its cards was exercised against a live `datatug` in this port.
 
