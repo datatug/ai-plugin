@@ -79,6 +79,10 @@ test('every other form of datatug query run is denied with a reason the model ca
     "datatug $'query' run --db x --from c",
     "$'datatug' query run --db x --from c",
     "datatug query $'\\x72un' --db x --from c",
+    'datatug query run -f q --{result-id,1}',
+    'datatug query run -f q --result-i[d] 1',
+    'datatug query run -f q --result-?d 1',
+    'datatug query run -f q --cl*nt x',
     'datatug query $"run" --db x --from c',
   ]
   for (const cmd of denied) {
@@ -139,6 +143,14 @@ test('the store and the capture folder are named only by their paths, never by p
     'ls "$HOME"/.datatug',
     'ls $TMPDIR/datatug-claude-*',
     "datatug query results $'locate' --id t1",
+    'q=query-results; cat ~//.datatug/$q/t1/data.json',
+    'cat ~//.datatug/query-{results,x}/t1/data.json',
+    `cat ${HOME}/./.datatug/query-{results,x}/t1/data.json`,
+    'cat ~/Library/../.datatug/query-{results,x}/t1/data.json',
+    'cat ~//.datatug/query-r$(true)esults/t1/data.json',
+    'ls ~//.datatug/query-{results,x}',
+    'datatug ui --result t1',
+    'datatug --client x ui --result=t1',
   ]) expect({ cmd, denied: bashNamesStore(cmd, HOME) }).toEqual({ cmd, denied: true })
   for (const cmd of [
     'rg datatug-claude-mod hooks/',
@@ -151,6 +163,8 @@ test('the store and the capture folder are named only by their paths, never by p
     'datatug query results check --format json',
     'rg "query results locate" spec/',
     'ls ~/.datatug-other',
+    'datatug ui',
+    'ls a//b/./c/../d',
   ]) expect({ cmd, denied: bashNamesStore(cmd, HOME) }).toEqual({ cmd, denied: false })
 })
 
