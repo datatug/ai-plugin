@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { BACKGROUND_TEXT, FAILED_TEXT, PLAIN_TEXT, STORE_TEXT, bashNamesStore, classify, normalizePath, runsQuery, skeleton } from '../lib/bash.js'
+import { BACKGROUND_TEXT, FAILED_TEXT, PLAIN_TEXT, STORE_TEXT, bashNamesStore, classify, lex, normalizePath, runsQuery } from '../lib/bash.js'
 
 const HOME = '/Users/u'
 
@@ -66,6 +66,15 @@ test('every other form of datatug query run is denied with a reason the model ca
     'datatug query run --db "$HOME/x.db" --from T',
     'datatug query run --db a --from T > out.json',
     'datatug query run --db a --from T; echo done',
+    "datatug 'query' run --db x --from c",
+    'datatug query "run" --db x --from c',
+    '"datatug" query run --db x --from c',
+    '\\datatug query run --db x --from c',
+    'time -p datatug query run --db x --from c',
+    'find . -name x -exec datatug query run --db x --from c \\;',
+    'script -q /dev/null datatug query run --db x --from c',
+    'unbuffer datatug query run --db x --from c',
+    'npx datatug query run --db x --from c',
   ]
   for (const cmd of denied) {
     const c = classify(cmd, false)
@@ -91,7 +100,7 @@ test('a pure help call passes through, and words of the command elsewhere are no
     'ls # datatug query run',
   ]) expect({ cmd, kind: classify(cmd, false).kind }).toEqual({ cmd, kind: 'none' })
   expect(runsQuery("bash -c 'datatug query run --db a --from T'")).toBe(false)
-  expect(skeleton('a "b c" \'d\' e')).toBe(`a${' '.repeat(11)}e`)
+  expect(lex('a "b c" \'d\' \\e').map(x => x.word)).toEqual(['a', 'b c', 'd', 'e'])
 })
 
 test('the store and the capture folder are named only by their paths, never by plain words', () => {
@@ -110,6 +119,17 @@ test('the store and the capture folder are named only by their paths, never by p
     'datatug daemon url --result t1 --format json',
     'datatug daemon url --result=t1',
     'echo x; datatug query results locate --id t1',
+    'datatug query results "locate" --id t1',
+    'grep -r . ~/.datatug',
+    'find ~/.datatug -type f -exec cat {} +',
+    'tar c ~/.datatug | tar xO',
+    'cat ~/.datatug/q*/*/*',
+    'cat ~/.datatug/quer?-results/*/*',
+    `cat ${HOME}/.datatug/q*/*/*`,
+    'cd ~ && cat .datatug/q*/*/*',
+    'cat ~/.datatug/"query-results"/*/*',
+    'cat ~/.DATATUG/QUERY-RESULTS/*/*',
+    'ls "$HOME"/.datatug',
   ]) expect({ cmd, denied: bashNamesStore(cmd, HOME) }).toEqual({ cmd, denied: true })
   for (const cmd of [
     'rg datatug-claude-mod hooks/',
