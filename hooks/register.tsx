@@ -338,11 +338,29 @@ export function keyMark(table: SchemaTable | undefined, pk: number | null): stri
   return parts > 1 ? `🔑 ${pk}` : '🔑'
 }
 
-// The prompt for the checked context bag items: one line each, then the user's own question.
-export function bagPrompt(entries: BagEntry[], projectId: string | null): string {
-  const lines = entries.slice(0, 50).map(e => `- ${clean(e.address).replace(/^contextBag\./, '')} = ${clean(e.value).slice(0, 200)} (${clean(e.source).slice(0, 80)})`)
-  const where = projectId !== null && projectId !== '' ? ` in the DataTug project ${clean(projectId).slice(0, 80)}` : ''
-  return `About these items from my context bag${where}:\n${lines.join('\n')}\n\nMy question: `
+// The prompt for the checked context bag items: the items (each with its database reference), the one
+// command to run, and the user's own question. Short and imperative so a small model runs the command at
+// once; the rows reach the card, never the model. `openDb` is the database the panel has open, for an
+// item that carries none.
+export function bagPrompt(entries: BagEntry[], projectId: string | null, openDb = ''): string {
+  const shown = entries.slice(0, 50)
+  const refOf = (e: BagEntry) => (e.db !== undefined && isDbRef(e.db) ? e.db : isDbRef(openDb) ? openDb : '')
+  const lines = shown.map(e => {
+    const kind = e.kind ?? (e.address === 'contextBag.table' ? 'table' : e.address === 'contextBag.column' ? 'column' : 'value')
+    const what = kind === 'value' ? `${clean(e.address).replace(/^contextBag\./, '')} = ${clean(e.value).slice(0, 200)}` : `${kind} ${clean(e.value).slice(0, 200)}`
+    const r = refOf(e)
+    return `- ${what} (${r === '' ? 'database not recorded' : `database ${r}`})`
+  })
+  const where = projectId !== null && projectId !== '' ? ` (project ${clean(projectId).slice(0, 80)})` : ''
+  const dbOf = shown.map(refOf).find(r => r !== '') ?? ''
+  const shape = `datatug query run --db '${dbOf === '' ? '<datatug:// database ref>' : dbOf}' --from <table> --limit <N> --no-policies`
+  return (
+    `My DataTug context bag${where}:\n${lines.join('\n')}\n\n` +
+    `Answer by running this at once, without asking and without loading skills: ${shape}\n` +
+    `Quote the reference as shown; use --db with it only (never --project with --db). Never look for connection strings and never read the DataTug store. ` +
+    `The rows appear in the panel card, not to you. "Top N" with no ranking column named means the first N rows (--limit N). The environment is the one in the reference. ` +
+    `Ask only if the database is not recorded and the project has several. Then reply in one line without repeating rows.\n\nMy question: `
+  )
 }
 
 // The tables a column's foreign keys point at.
@@ -1787,8 +1805,15 @@ export const register: Register = (on, options) => {
 
     // Metadata goes in the bag too: a table (contextBag.table = Invoice) or a column
     // (contextBag.column = Invoice.InvoiceDate).
+    // The reference of the project database that holds a table, from the project's scan.
+    const declaredDb = (table: string) => {
+      const t = findTable(sch.tables, table)
+      if (t === undefined || chosen === null || t.source === '' || t.env === '') return ''
+      const r = dbRef(chosen, { id: t.source, env: t.env })
+      return isDbRef(r) ? r : ''
+    }
     const bagHas = (address: string, value: string) => bag.entries.some(x => x.address === address && x.value === value)
-    const addMeta = (address: string, value: string, source: string) =>
+    const addMeta = (address: string, value: string, source: string, db = '') =>
       setBag(b => {
         if (b.entries.some(x => x.address === address && x.value === value)) return b
         const isCol = address === 'contextBag.column'
@@ -1802,6 +1827,7 @@ export const register: Register = (on, options) => {
           kind: isCol ? 'column' : 'table',
           table: isCol && dot > 0 ? value.slice(0, dot) : value,
           column: isCol && dot > 0 ? value.slice(dot + 1) : undefined,
+          db: db !== '' ? db : declaredDb(isCol && dot > 0 ? value.slice(0, dot) : value),
         }
         return { ...b, entries: [...b.entries, entry].slice(-200) }
       })
@@ -2128,7 +2154,7 @@ export const register: Register = (on, options) => {
                 {kind}{' '}
                 <Text italic>(top {TOP})</Text>
               </Text>
-              <Button key="dbtable-bag" onPress={() => addMeta('contextBag.table', dt.name as string, `${od.provider} ${kind}`)}>
+              <Button key="dbtable-bag" onPress={() => addMeta('contextBag.table', dt.name as string, `${od.provider} ${kind}`, promptDb)}>
                 {bagHas('contextBag.table', dt.name) ? 'In 🛒' : 'Add to 🛒'}
               </Button>
             </Box>
@@ -2179,7 +2205,7 @@ export const register: Register = (on, options) => {
                       {clean(r.name)}
                     </Button>,
                   )}
-                  {gridCell(4, iconButton(`dbbag:${r.name}`, '🛒', 'Add column to context bag', () => addMeta('contextBag.column', `${dt.name}.${r.name}`, `${od.provider} column`)))}
+                  {gridCell(4, iconButton(`dbbag:${r.name}`, '🛒', 'Add column to context bag', () => addMeta('contextBag.column', `${dt.name}.${r.name}`, `${od.provider} column`, promptDb)))}
                   {gridCell(w.type, <Text>{clean(r.type)}</Text>)}
                   {gridCell(11, <Text dimColor={r.nullable === '—'}>{r.nullable}</Text>)}
                   {gridCell(
@@ -2397,7 +2423,7 @@ export const register: Register = (on, options) => {
     // Ask Claude about the checked bag items: what the user selected goes into the prompt as a list.
     const checked = bag.entries.filter(x => x.isOn)
     const askAboutBag = () =>
-      void $.prompt.fill({ text: bagPrompt(checked, chosen), mode: 'append' })
+      void $.prompt.fill({ text: bagPrompt(checked, chosen, dbPromptRef !== '' ? dbPromptRef : isDbRef(dbUrl) ? dbUrl : dbs.projectId === chosen && dbs.items.length === 1 ? dbRef(chosen, dbs.items[0]) : ''), mode: 'append' })
 
     // Card 2: context bag
     const bagCard = (

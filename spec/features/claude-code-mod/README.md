@@ -331,6 +331,12 @@ The Table metadata, Table records and Record cards of a database that is a sourc
 **When** the person uses Ask Claude, the context bag and the notices
 **Then** no prompt, notice, tool result or argument list holds the link, its one-time code, its fragment or the non-key value, and the mod's session state holds no link or code; the only row values in session state are the rows the cards already keep for display, plus, per row, the digits of an integer too large for JavaScript.
 
+### AC: bag-prompt-one-call
+
+**Given** a context bag whose table, column or value items came from a database of the project
+**When** the person presses Ask Claude
+**Then** each item line names its database as a `datatug://<project>/<db>?env=<ENV>` reference (the open database's for an item that has none, and "database not recorded" when there is neither), and the draft states the one command to run (`datatug query run --db '<ref>' --from <table> --limit <N> --no-policies`), that `--db` is never combined with `--project`, that no connection string or store is looked for, that "top N" means the first N rows, and that the rows appear in the card and not to Claude; no connection string or credential is ever written into it; and the Bash refusal for the store names the same command.
+
 ### AC: other-manifests-unchanged
 
 **Given** the Codex, Gemini CLI, Copilot and Cursor manifests

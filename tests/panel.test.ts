@@ -281,7 +281,7 @@ test('Context bag Ask Claude puts the checked items into the prompt', async ($, 
   expect(JSON.stringify(await pane.drawn())).toContain('Ask Claude…')
   await pane.press({ key: 'bag-ask' } as never)
   expect(fills).toHaveLength(1)
-  expect(fills[0]).toContain('About these items from my context bag')
+  expect(fills[0]).toContain('My DataTug context bag')
   expect(fills[0]).toContain('people.n = ')
   expect(fills[0]).toContain('My question: ')
   expect(fills[0]).toContain('append')
@@ -496,6 +496,13 @@ test('the context bag is the second card, and a table of an opened database can 
   expect(d).toContain('column.')
   expect(d).toContain('Album.Title')
   expect(d).toContain('In 🛒')
+  // the table and column carry the database they came from, so Ask Claude names it
+  const before = fills.length
+  await pane.press({ key: 'bag-ask' } as never)
+  const ask = fills.slice(before).join('')
+  expect(ask).toContain('- table Album (database datatug://p1/x?env=local)')
+  expect(ask).toContain('- column Album.Title (database datatug://p1/x?env=local)')
+  expect(ask).toContain('datatug query run --db \'datatug://p1/x?env=local\' --from <table> --limit <N> --no-policies')
   // a column of the table card opens its Column card in place of the table card
   await pane.press({ key: 'dbcol:AlbumId' } as never)
   d = JSON.stringify(await pane.drawn())
