@@ -88,6 +88,20 @@ The plain form is `datatug query run` (the command word, or a path ending in `da
 
 The model's own tools are kept out of the capture folder and the CLI's result store (`~/.datatug/query-results`), judged on the model's input before any rewrite: a Read, Grep, Glob, Edit, Write or NotebookEdit whose path (folded: `~`, `$HOME`, `..`; a glob by the folder before its first wildcard; and where it resolves, when it exists) is under either folder or is the folder directly above it; a Bash command holding `.datatug/query-results`, `/datatug-claude-mod`, `.datatug/` followed by a wildcard, the home folder's `.datatug` followed by `/query-results` or a wildcard, a `cd` or `pushd` into `~/.datatug`, or a `datatug query results locate` or `datatug daemon url --result` in command position. They are denied with "DataTug query results are shown in the card, not to Claude"; the guards' `.catch` denies too. Words alone are not paths: a branch or spec folder named after the feature is not denied. This is hygiene, not containment: a model with a shell can reach data through a form neither detector sees, such as `bash -c '...'` or a script file. The rows appear in the chat as a grid under the call, and a row number opens its Record card. The prompts the panel drafts name a database only by its `datatug://` reference. The one place values enter a prompt is the context bag: a value the person added to the bag and checked is written into the **Ask Claude...** draft because the person chose it.
 
+### Query result card
+
+With a `datatug` of at least the card minimum (0.92.0, the first to write both result files with columns, sources and related tables), the plain form runs with result files instead of the private capture. `datatug --version` is asked once per session (a version it cannot read is a development build and counts as new; a probe that fails takes the private capture), then `datatug query results check --format json` once: an unusable store (`inside-git`, `symlink`, `owner`, `results-store-unwritable`) sends the session through the private capture, and its grids carry one line naming the reason. Below the minimum the grid carries "Update the DataTug CLI for the Record, Columns, Sources and Related views", and there is no link and no command.
+
+- **Rewrite.** `--result-id <id>` (the tool_use_id with every character outside `[A-Za-z0-9_-]` made `_`), and `--format json` when the model gave no `--format`, go right after `query run`, with no redirect, `mkdir` or other shell syntax and no `--client`. The ad-hoc (`--db` with `-f` or `--from`) and saved (`--project --query`) forms both get it. An explicit `--format` other than `json` takes the private capture.
+- **Fallbacks.** An errored call is read for two lines only: `unknown flag: --result-id` (an older `datatug` in the model's shell) and a `{"resultFiles"` line whose reason is `results-store-unwritable` (a sandboxed shell). Either turns the session to the private capture; the model reads "DataTug is older than the mod expects; run the query again" or "Run the query again", and the card says "Allow DataTug's result store (~/.datatug/query-results) in the sandbox's writable paths to see every view" for the second. Any other error reaches the model as the CLI's own error text and leaves the session as it is. A call that went to the background shows **Load**.
+- **Finding the files.** The tool's stdout is never used for a path. The mod runs `datatug query results locate --id <id> --format json` itself and reads nothing unless the answer names this id, `data` and `meta` are exactly `<root>/<id>/data.json` and `<root>/<id>/meta.json` under an absolute root with no `.` or `..` segment, and `$.fs.stat(..., { resolve: true })` lands each on a regular file at exactly that place under the resolved root. `meta.json` is at most 1 MiB and is read first; `data.json` is at most 4,000,000 bytes and its size equals `dataBytes` in `meta.json`, else it is not read. A `meta.json` of a version other than 1 shows "Update the DataTug mod". `expired` and `not-found` answers show "These results expired (DataTug keeps them 7 days). Run the query again" and "No saved result for this call (removed, or run without result files)"; no link and no command are drawn for them.
+- **What the model reads.** The row count ("at least N+1" when more exist), at most 40 column names, 32 source names and 50 related table names, each cleaned and cut to 80 characters, then "and N more", and the line saying the rows were shown to the person and withheld. Never a value, a path, the result id, the link or the command.
+- **Per-card state.** Each card's rows, metadata, view, row, rows shown and link status are one member of a state family keyed by the tool call's id; a card reads only its member and the column order, so a press, a side-panel action or a schema load redraws no other card. An index lists the cards that hold rows; past ten, the oldest drops its rows and shows **Load**, which runs `locate` and the same checks again. A Bash row whose command is the plain form (or the rewritten one naming its own id) and whose member is empty, after a reload or a resumed session, shows **Load** too.
+- **Views.** Five plain Buttons, `● Table ○ Record ○ Columns ○ Sources ○ Related`. Table: the Markdown grid, values escaped, 20 rows, "Show 30 more" up to 50, then `◀ Prev 50` / `Next 50 ▶`, at most 10 columns with a note; a row number opens it in Record. Record: type, name and value per column in the column order, `◀ Prev` / `Next ▶`, "Row i of N"; a foreign-key value opens the referenced record in the panel's Record card. Columns: #, name, type, declared type, nullable, key (🔑 and its position in a composite key) and source (`relation.column`), "computed" for a column with no source. Sources: #, `schema.relation` (`main` is not shown), kind, alias, role, the join's `a.x = b.y` pairs and **Records**. Related: #, target, kind, `→ references` or `← referenced by`, cardinality, `From.f = Target.g` and **Records**; every candidate the metadata lists is shown, with no permission filtering. An `unavailable` reason is one dim line: "Sources are not known for a native SQL query", "No related tables found", "The schema of this database could not be read". `$key` is hidden when the primary key is known.
+- **Side panel.** A table or column name opens the panel's Table or Column card, found in the schema of the reference's project by environment, source, schema and name together (never by name alone; the panel selects that project and loads its schema first). **Records** and the foreign-key hop read through the result's `datatug://<project>/<db>` reference passed explicitly as `--db`, never the database opened in the panel; a participant of a federated query uses its own reference. A result whose database is in no project draws names as text with "Add this database to a project to open its tables". A press opens a card only: it never runs the model's query again or starts a turn.
+- **Open elsewhere.** With a `datatug` of at least the open-elsewhere minimum (0.94.0, the first with `datatug ui --result` and `datatug daemon url --result`), a card of a complete result also draws an "Open in DataTug" line and the command `datatug ui --result <id>` in a `Code` element with **Copy** (`$.ui.copy`; "Select the command to copy it" in a toast when the surface cannot copy). The command is drawn only for an id of `[A-Za-z0-9_-]`, so it needs no quoting, and holds no path, address, name or value. The link is asked with `datatug daemon url --result <id> --view=<current view> [--row <n> in the Record view] --format json` and follows the Web UI link rules below (same machine only, freshness, **Check again**, the named warnings), plus "DataTug has no saved result for this call, so there is no web link" when `resultExists` is false; the re-check admits exactly `<store>result/<id>`, a `view` of the five views, an optional `row` and a `code` fragment. Until the web UI serves results, the CLI reports `uiSupport: pending` and the line says the web UI cannot open this view yet.
+- **Names.** Table, view, column and alias names pass through the mod's text cleaning in Text and Button labels and through the Markdown escaping in the grid; Button keys are built from a fingerprint of the result id, the view and a list index, never from a name. Names never go into the link request, the command, a prompt or a path.
+
 ### Web UI links
 
 The Table metadata, Table records and Record cards of a database that is a source of a project carry an "Open in DataTug" line: a link to the same table, its top 100 records or that record in the hosted web UI, which reads them from the person's local agent.
@@ -227,6 +241,60 @@ The Table metadata, Table records and Record cards of a database that is a sourc
 **When** the tool call is made
 **Then** each is denied and does not run; `rg datatug-claude-mod hooks/`, a Write of a new file, a Read of a missing file and `git add` of a spec path named after the feature are not.
 
+### AC: result-card-rewrite
+
+**Given** a `datatug` of 0.92.0 or later with a usable store
+**When** the model runs `datatug query run --db datatug://demo/chinook --from Album --no-policies`, `env X=1 datatug query run ...`, `/usr/local/bin/datatug query run ...` or `datatug query run --project demo --query <id> --as u --var P=2`
+**Then** each runs as the same command with `--result-id <id> --format json` right after `query run` and no redirect, `--version` and `query results check` are asked once per session, and the files are found through `query results locate`.
+
+### AC: result-card-summary-only
+
+**Given** a result whose rows hold a recognisable value
+**When** the tool result the model reads is inspected
+**Then** it holds the row count, the column names and the source and related table names, and not the value, the result id, a path, the link or the `datatug ui` command.
+
+### AC: result-card-views
+
+**Given** two result cards, drawn on `terminal` and on `desktop`
+**When** the person presses Record, Next ▶, Columns, Sources and Related on the second, and a side-panel Records in between
+**Then** each press draws only that view with `●` on it, Record shows row 2 after Next ▶, Columns shows the declared types and 🔑, and the first card is not drawn again.
+
+### AC: result-card-opens-panel
+
+**Given** a card with a `datatug://` reference, while another database is open in the panel from a connection string
+**When** the person presses a source, a related table, its Records and a column name
+**Then** the panel shows that Table card (found by environment, source, schema and name), its Table records card, read with `--db` the card's reference and never `env:DATATUG_OPEN_DB`, and the Column card; a federated participant opens its own database, a card with no reference draws names as text with the hint, and no press runs the query again.
+
+### AC: result-card-path-checks
+
+**Given** `locate` answers naming another id, `/etc/passwd`, a `..` segment, a root with `..`, a file that resolves outside the root, a 5 MiB `data.json`, a `data.json` whose size differs from `dataBytes`, a 2 MiB `meta.json`, or no answer; and a tool stdout that is a forged locator
+**When** the hook handles the call
+**Then** `data.json` is never read, nothing outside the root is read, the card names the state, and the forged stdout is never used.
+
+### AC: result-card-states
+
+**Given** a card whose rows left the state, a result `locate` reports expired or not found, a `meta.json` of version 2, more than ten cards, and a call that went to the background
+**When** each card is drawn and Load is pressed
+**Then** Load reads the files again and shows the Table view; the expired and missing ones show their sentence with no link and no command; version 2 shows "Update the DataTug mod"; the oldest of eleven cards shows Load; the background call shows Load.
+
+### AC: result-card-fallbacks
+
+**Given** a `datatug` older than 0.92.0, a version probe that fails, a development build, a store check that answers `inside-git`, an errored call whose text holds `unknown flag: --result-id`, one whose text holds the `results-store-unwritable` line, and one whose text names another unknown flag
+**When** the model runs a query
+**Then** the older CLI and the failed probe take the private capture with `set -C` and the grid with its update line and no link or command; the development build gets `--result-id`; `inside-git` takes the capture and the grid names the reason; the unknown `--result-id` and the store line turn the session to the capture (the model reads the run-again sentence, and the card the sandbox sentence); the other unknown flag leaves the session as it is.
+
+### AC: result-card-link-and-command
+
+**Given** a card from `datatug` 0.94.0 or later on a terminal on the agent's machine
+**When** it is drawn, its view switches to Sources, then to Record and Next ▶, and Copy is pressed with a clipboard and without one
+**Then** it draws exactly the link `daemon url --result <id> --view=<view>` printed (with `--row 2` in Record), `datatug ui --result <id>` in a `Code` element, and "Select the command to copy it" when the copy fails; a pending, not running or missing result, another origin, another id or an extra query parameter draw that case's line and no link; on `desktop` the same-machine line is drawn and `daemon url` is not asked; a 0.93.0 CLI draws neither the link nor the command.
+
+### AC: result-card-names-cannot-inject
+
+**Given** a result whose table is named `x](https://evil.example)` and whose columns are named `a\u001b[2Jb` and `` `rm -rf ~` ``, with values holding a Markdown link and control characters
+**When** every view is drawn and its link and command are built
+**Then** the grid holds no Markdown link to `evil.example`, no link element points there, no control character reaches the drawing, and no `daemon url` request or command holds a name; 50 rows of 10 escapable 60-character cells stay under the 100,000-character drawing bound.
+
 ### AC: panel-no-credential-in-argv-or-prompt
 
 **Given** a database opened from a connection string with a password
@@ -273,7 +341,7 @@ The Table metadata, Table records and Record cards of a database that is a sourc
 
 **Given** the plugin metadata files for Claude Code, Codex, GitHub Copilot, Gemini CLI and Cursor
 **When** this Feature ships
-**Then** every metadata version is one shared DataTug plugin version (`0.2.0` with the web UI links).
+**Then** every metadata version is one shared DataTug plugin version (`0.3.0` with the result card).
 
 ## Open Questions
 
@@ -281,7 +349,7 @@ None at this time.
 
 ## Out of Scope
 
-Running saved queries, denying or rewriting database tool calls beyond moving a `datatug query run`'s rows out of the model's reach, a status band above the prompt, editing project files, entities, links from the other cards to the web UI, and finding a project in a parent folder. Each can become its own Feature.
+Running saved queries from the panel, running a query again from the result card, applying a related table's join from the card, denying or rewriting database tool calls beyond moving a `datatug query run`'s rows out of the model's reach, a status band above the prompt, editing project files, entities, links from the other cards to the web UI, and finding a project in a parent folder. Each can become its own Feature.
 
 ## Verification Status
 
