@@ -1242,10 +1242,14 @@ async function loadCard($: Host, key: string, id: string): Promise<CardMeta | nu
 // One constant line in the transcript for each result, so a card the engine folded into a count line,
 // refused or failed to draw is never silent. `$.ui.log` is the transcript line (dim, not sent to the
 // model); `$.ui.notice` only puts a line under an open permission dialog. No path, id, row or command.
-const CARD_NOTICE = 'DataTug: the result is in the card under its command (ctrl+o expands folded tool calls).'
-function announceCard($: Host): void {
+const NOTICE_PLACED = 'DataTug: result card above; ctrl+x tab to use it in the DataTug panel, Esc returns (ctrl+o expands folded tool calls).'
+const NOTICE_UNPLACED = 'DataTug: result card above; run /datatug to use it in the DataTug panel (ctrl+o expands folded tool calls).'
+async function announceCard($: Host): Promise<void> {
   try {
-    ;($ as unknown as { ui: { log: (text: string) => void } }).ui.log(CARD_NOTICE)
+    // The panel shows the newest card with the views as focusable buttons. Opened without `focus`: it
+    // never takes the keys from what the person is typing. An open panel is only redrawn by the state.
+    const opened = await ($ as unknown as { ui: { open: (p: { id: string; title: string }) => Promise<{ isPlaced?: boolean } | undefined> } }).ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+    ;($ as unknown as { ui: { log: (text: string) => void } }).ui.log(opened?.isPlaced === true ? NOTICE_PLACED : NOTICE_UNPLACED)
   } catch {
     // a line that cannot be drawn is not worth failing the query for
   }
@@ -1265,7 +1269,7 @@ const VIEW_KEYS: CardView[] = VIEWS as CardView[]
 // One result card under its `datatug query run` row: a header, the five-view switcher, the view,
 // and, when the CLI can open the result elsewhere, the web link and the terminal command. It reads
 // nothing but its own member and the column order; a press writes only its member.
-async function drawCard($: Host, e: { requestId: string; surface: string; props: { bodyColumns?: number } }, row: unknown, card: CardState) {
+async function drawCard($: Host, e: { requestId: string; surface: string; component?: string; props: { bodyColumns?: number } }, row: unknown, card: CardState, hotkeys = false) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { Box, Text, Button, Markdown, Link, Code } = $.ui.resolve(e as never) as any
   const key = e.requestId
@@ -1584,8 +1588,8 @@ async function drawCard($: Host, e: { requestId: string; surface: string; props:
         {`${kept} row${kept === 1 ? '' : 's'}${meta.rows.hasMore ? ` (at least ${kept + 1})` : ''} x ${names.length} column${names.length === 1 ? '' : 's'} (shown to you, not to Claude)`}
       </Text>
       <Box flexDirection="row" gap={1}>
-        {VIEW_KEYS.map(v => (
-          <Button key={k('view', v)} plain onPress={() => set(c => ({ ...c, view: v }))}>
+        {VIEW_KEYS.map((v, i) => (
+          <Button key={k('view', v)} plain {...(hotkeys ? { hotkey: String(i + 1) } : {})} onPress={() => set(c => ({ ...c, view: v }))}>
             {`${card.view === v ? '●' : '○'} ${VIEW_LABELS[v]}`}
           </Button>
         ))}
@@ -1679,7 +1683,7 @@ export const register: Register = (on, options) => {
       }
       // Never the tool's stdout for paths: the mod asks the CLI where the files are.
       const meta = await loadCard($ as Host, key, id)
-      if (meta !== null) announceCard($ as Host)
+      if (meta !== null) await announceCard($ as Host)
       return { result: { ...out, stdout: meta === null ? TEXT.ran : resultSummary(meta) } } as typeof ran
     }
     // The plain form, private capture: the rows go to a file of the mod's, never through Bash's output.
@@ -1720,7 +1724,7 @@ export const register: Register = (on, options) => {
     })
     await update($, view, () => ({ current: parsed.id, selected: null, offset: 0 }))
     void ensureSchema($ as Host)
-    announceCard($ as Host)
+    await announceCard($ as Host)
     // Not `ran`'s ref or text: core would use the messages it already made for the model.
     return { result: { ...out, stdout: summary(parsed) } } as typeof ran
   }).catch(() => ({ deny: FAILED_TEXT }) as never)
@@ -1819,7 +1823,7 @@ export const register: Register = (on, options) => {
   // optional ones that appear on demand (the record card).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Input, Link } = $.ui.resolve(e)
-    const all = await read($, results)
+    const [all, latestKeys] = await Promise.all([read($, results), read($, cardRows)])
     const v = await read($, view)
     const ps = await read($, projects)
     const proj = await read($, project)
@@ -2931,8 +2935,23 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // The newest result card, the one the transcript row also draws, from the same code and the same
+    // member, so a press here and a press there are one state. Its views take the keys 1-5.
+    const latest = latestKeys.at(-1)
+    const latestState = latest === undefined ? NO_CARD : await read($, memberOf(cards, { requestId: latest }))
+    const latestCard =
+      latest === undefined || latestState.status === 'none' ? null : (
+        <Box key="card-latest" flexDirection="column" borderStyle="round" paddingX={1}>
+          <Text bold dimColor>
+            Latest result
+          </Text>
+          {await drawCard($ as Host, { requestId: latest, surface: e.surface, component: e.component, props: {} }, null, latestState, true)}
+        </Box>
+      )
+
     return (
       <Box flexDirection="column" gap={1}>
+        {latestCard}
         {projectCard}
         {bagCard}
         {openCard}

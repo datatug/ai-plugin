@@ -2,6 +2,8 @@ import { expect, test } from 'claude-code/testing'
 
 import { fakeWorld, result, toolUse } from './card-fixtures'
 
+const PANE_ARGS = { plugin: 'datatug', surface: 'terminal', component: 'Pane', requestId: 'datatug', props: { bodyColumns: 100 } }
+
 // The card must reach a live terminal: a folded tool group is unfolded, a card arriving after the
 // row was first drawn while running redraws it, and a line is left in the transcript either way.
 const CMD = 'datatug query run --db datatug://demo/chinook --from Album --no-policies'
@@ -79,6 +81,9 @@ test('each result leaves one constant transcript line: no path, id, row or comma
   expect(lines).toHaveLength(2)
   expect(lines[0]).toBe(lines[1])
   expect(lines[0]).toContain('ctrl+o')
+  expect(lines[0]).toContain('ctrl+x tab')
+  // The panel is opened for the person to focus, never with the keys taken from the prompt.
+  expect(cli.opened).toEqual(['datatug', 'datatug'])
   for (const word of ['n1', 'n2', 'SECRET-ALICE', 'query-results', '/home', 'datatug://', 'Album']) expect({ word, found: lines[0].includes(word) }).toEqual({ word, found: false })
 })
 
@@ -87,4 +92,49 @@ test('no line is left for a query that gave no card', async ($, on) => {
   const lines = cli.logs
   await run($, 'n3')
   expect(lines).toEqual([])
+})
+
+test('when the panel cannot be placed the line names /datatug instead of a key', async ($, on) => {
+  const cli = fakeWorld(on, result('n4'), {})
+  cli.placed = false
+  await run($, 'n4')
+  expect(cli.logs).toHaveLength(1)
+  expect(cli.logs[0]).toContain('/datatug')
+  expect(cli.logs[0]).not.toContain('ctrl+x tab')
+})
+
+test('the panel shows the newest result card with views on keys 1-5, sharing state with the transcript row', async ($, on) => {
+  fakeWorld(on, { ...result('q1'), ...result('q2') })
+  await run($, 'q1')
+  await run($, 'q2')
+  const row = await $.ui.mount(toolUse('q2', CMD) as never)
+  const first = await $.ui.mount(toolUse('q1', CMD) as never)
+  const pane = await $.ui.mount(PANE_ARGS as never)
+  const before = await text(pane)
+  expect(before).toContain('Latest result')
+  for (const [i, v] of ['Table', 'Record', 'Columns', 'Sources', 'Related'].entries()) {
+    expect(before).toContain(`"hotkey":"${i + 1}"`)
+    expect(before).toContain(v)
+  }
+  expect(before).toContain('SECRET-ALICE')
+  // A press in the panel is the card's own state: the transcript row of that result follows, the other does not.
+  const fp = (s: string) => {
+    let h = 0x811c9dc5
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 0x01000193) >>> 0
+    }
+    return h.toString(16).padStart(8, '0')
+  }
+  const firstBefore = await text(first)
+  await pane.press({ key: `qr:${fp('q2')}:view:columns` } as never)
+  expect(await text(pane)).toContain('● Columns')
+  expect(await text(row)).toContain('● Columns')
+  expect(await text(first)).toBe(firstBefore)
+})
+
+test('the panel shows no result section before any result', async ($, on) => {
+  fakeWorld(on, {})
+  const pane = await $.ui.mount(PANE_ARGS as never)
+  expect(await text(pane)).not.toContain('Latest result')
 })
