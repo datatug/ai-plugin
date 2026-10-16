@@ -342,24 +342,40 @@ export function keyMark(table: SchemaTable | undefined, pk: number | null): stri
 // command to run, and the user's own question. Short and imperative so a small model runs the command at
 // once; the rows reach the card, never the model. `openDb` is the database the panel has open, for an
 // item that carries none.
-export function bagPrompt(entries: BagEntry[], projectId: string | null, openDb = ''): string {
+export type BagSource = { id: string; env: string }
+
+// The database an item without a recorded reference is asked against: the one it carries, else the open
+// database, else the project's only database, else (several) the one source whose environment is
+// `local`, never a production one by default. '' when still ambiguous: the prompt then lets Claude ask.
+// Applied when the prompt is built, so an item bagged before the reference was recorded is upgraded too.
+export function resolveBagDb(entryDb: string | undefined, openDb: string, projectId: string | null, sources: BagSource[]): { ref: string; rule: string } {
+  if (entryDb !== undefined && isDbRef(entryDb)) return { ref: entryDb, rule: '' }
+  if (isDbRef(openDb)) return { ref: openDb, rule: '' }
+  if (projectId === null || projectId === '') return { ref: '', rule: '' }
+  if (sources.length === 1) return { ref: dbRef(projectId, sources[0]), rule: ', default: the only database' }
+  const local = sources.filter(s => s.env.toLowerCase() === 'local')
+  if (local.length === 1) return { ref: dbRef(projectId, local[0]), rule: ', default: local' }
+  return { ref: '', rule: '' }
+}
+
+export function bagPrompt(entries: BagEntry[], projectId: string | null, openDb = '', sources: BagSource[] = []): string {
   const shown = entries.slice(0, 50)
-  const refOf = (e: BagEntry) => (e.db !== undefined && isDbRef(e.db) ? e.db : isDbRef(openDb) ? openDb : '')
+  const resolve = (e: BagEntry) => resolveBagDb(e.db, openDb, projectId, sources)
   const lines = shown.map(e => {
     const kind = e.kind ?? (e.address === 'contextBag.table' ? 'table' : e.address === 'contextBag.column' ? 'column' : 'value')
     const what = kind === 'value' ? `${clean(e.address).replace(/^contextBag\./, '')} = ${clean(e.value).slice(0, 200)}` : `${kind} ${clean(e.value).slice(0, 200)}`
-    const r = refOf(e)
-    return `- ${what} (${r === '' ? 'database not recorded' : `database ${r}`})`
+    const r = resolve(e)
+    return `- ${what} (${r.ref === '' ? 'database not recorded' : `database ${r.ref}${r.rule}`})`
   })
   const where = projectId !== null && projectId !== '' ? ` (project ${clean(projectId).slice(0, 80)})` : ''
-  const dbOf = shown.map(refOf).find(r => r !== '') ?? ''
+  const dbOf = shown.map(e => resolve(e).ref).find(r => r !== '') ?? ''
   const shape = `datatug query run --db '${dbOf === '' ? '<datatug:// database ref>' : dbOf}' --from <table> --limit <N> --no-policies`
   return (
     `My DataTug context bag${where}:\n${lines.join('\n')}\n\n` +
     `Answer by running this at once, without asking and without loading skills: ${shape}\n` +
     `Quote the reference as shown; use --db with it only (never --project with --db). Never look for connection strings and never read the DataTug store. ` +
     `The rows appear in the panel card, not to you. "Top N" with no ranking column named means the first N rows (--limit N). The environment is the one in the reference. ` +
-    `Ask only if the database is not recorded and the project has several. Then reply in one line without repeating rows.\n\nMy question: `
+    `Ask only if the database is not recorded and the project has several. Then reply with one line saying the result is in the panel card; do not offer to read, list or paste rows.\n\n`
   )
 }
 
@@ -1805,13 +1821,18 @@ export const register: Register = (on, options) => {
 
     // Metadata goes in the bag too: a table (contextBag.table = Invoice) or a column
     // (contextBag.column = Invoice.InvoiceDate).
-    // The reference of the project database that holds a table, from the project's scan.
+    // The reference of the project database that holds a table, from the project's scan. A table that
+    // several databases hold (local and prod) names none here: the prompt resolves it by rule.
     const declaredDb = (table: string) => {
       const t = findTable(sch.tables, table)
+      const homes = new Set(sch.tables.filter(x => x.name.toLowerCase() === table.toLowerCase()).map(x => `${x.env}/${x.source}`))
+      if (homes.size > 1) return ''
       if (t === undefined || chosen === null || t.source === '' || t.env === '') return ''
       const r = dbRef(chosen, { id: t.source, env: t.env })
       return isDbRef(r) ? r : ''
     }
+    // The database the panel has open (a project reference), for an item seen where no database is named.
+    const openRef = () => (dbPromptRef !== '' ? dbPromptRef : isDbRef(dbUrl) ? dbUrl : '')
     const bagHas = (address: string, value: string) => bag.entries.some(x => x.address === address && x.value === value)
     const addMeta = (address: string, value: string, source: string, db = '') =>
       setBag(b => {
@@ -1827,7 +1848,7 @@ export const register: Register = (on, options) => {
           kind: isCol ? 'column' : 'table',
           table: isCol && dot > 0 ? value.slice(0, dot) : value,
           column: isCol && dot > 0 ? value.slice(dot + 1) : undefined,
-          db: db !== '' ? db : declaredDb(isCol && dot > 0 ? value.slice(0, dot) : value),
+          db: db !== '' ? db : declaredDb(isCol && dot > 0 ? value.slice(0, dot) : value) || openRef(),
         }
         return { ...b, entries: [...b.entries, entry].slice(-200) }
       })
@@ -2423,7 +2444,7 @@ export const register: Register = (on, options) => {
     // Ask Claude about the checked bag items: what the user selected goes into the prompt as a list.
     const checked = bag.entries.filter(x => x.isOn)
     const askAboutBag = () =>
-      void $.prompt.fill({ text: bagPrompt(checked, chosen, dbPromptRef !== '' ? dbPromptRef : isDbRef(dbUrl) ? dbUrl : dbs.projectId === chosen && dbs.items.length === 1 ? dbRef(chosen, dbs.items[0]) : ''), mode: 'append' })
+      void $.prompt.fill({ text: bagPrompt(checked, chosen, openRef(), dbs.projectId === chosen ? dbs.items : []), mode: 'append' })
 
     // Card 2: context bag
     const bagCard = (
