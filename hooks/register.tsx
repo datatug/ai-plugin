@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 
 import { MIN_CLI_VERSION, VERSION_ARGS, isOlder, missingCliText, parseVersion, tooOldText } from '../lib/cli.js'
 import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, bigIntegers, fingerprint, isSameHost, isUnknownCommand, parseDevHost, readLink, recordKey, sourceUnavailableText, urlArgs } from '../lib/links.js'
-import { CARD_MIN_CLI_VERSION, LEGACY_TEXT, MAX_DATA_BYTES, MAX_META_BYTES, OPEN_MIN_CLI_VERSION, STATE_TEXT, TEXT, UNAVAILABLE_TEXT, VIEWS, VIEW_LABELS, fallbackOf, isRef, readData, readLocator, readMeta, resultId, resultSummary, resultUrlArgs, statLandsAt, storeProblem, uiCommand } from '../lib/results.js'
+import { CARD_MIN_CLI_VERSION, LEGACY_TEXT, MAX_DATA_BYTES, MAX_META_BYTES, OPEN_MIN_CLI_VERSION, RESULT_VIEW_MIN_CLI_VERSION, STATE_TEXT, TEXT, UNAVAILABLE_TEXT, VIEWS, VIEW_LABELS, fallbackOf, isRef, readData, readLocator, readMeta, resultId, resultSummary, resultUrlArgs, statLandsAt, storeProblem, uiCommand } from '../lib/results.js'
 import { isProjectView } from '../lib/command.js'
 import { FAILED_TEXT, STORE_TEXT, bashNamesStore, classify, normalizePath, pathInStore } from '../lib/bash.js'
 import { stripUnsafe } from '../lib/text.js'
@@ -974,7 +974,7 @@ async function fetchLink($: Host, card: string, req: LinkReq, force: boolean) {
 // A result card's link, for its current view (and row, in the Record view).
 async function fetchCardLink($: Host, key: string, force: boolean) {
   const card = await read($, memberOf(cards, { requestId: key }))
-  const args = resultUrlArgs(card.id, card.view, card.view === 'record' ? card.row + 1 : undefined)
+  const args = resultUrlArgs(card.id, card.view, card.view === 'record' ? card.row + 1 : undefined, hasResultView())
   if (args === null) return
   const store: LinkStore = {
     get: async () => (await read($, memberOf(cards, { requestId: key }))).link,
@@ -1138,6 +1138,9 @@ async function sessionMode($: Host): Promise<'new' | 'legacy'> {
   return (bashMode = 'new')
 }
 
+// Whether the CLI takes `--result-view` (a version that cannot be read is taken as the older flag).
+const hasResultView = () => bashVersion !== null && !isOlder(bashVersion, parseVersion(RESULT_VIEW_MIN_CLI_VERSION) as number[])
+
 const canOpenElsewhere = () => bashVersion === null || !isOlder(bashVersion, parseVersion(OPEN_MIN_CLI_VERSION) as number[])
 
 // Finds a result's files by asking the CLI (`query results locate`, never the model's command or
@@ -1173,17 +1176,18 @@ async function loadCard($: Host, key: string, id: string): Promise<CardMeta | nu
     await set('too-large')
     return null
   }
-  const metaText = await $.fs.read(loc.files.meta).catch(() => null)
+  // Each file is read at the resolved path that was checked, not at the path as written.
+  const metaText = await $.fs.read(`${realRoot}/${id}/meta.json`).catch(() => null)
   const m = metaText === null ? { state: 'unreadable' } : readMeta(metaText, id)
   if (!('meta' in m)) {
     await set(m.state as CardState['status'])
     return null
   }
   if ((ds as { size: number }).size !== m.meta.dataBytes) {
-    await set('too-large')
+    await set('inconsistent')
     return null
   }
-  const dataText = await $.fs.read(loc.files.data).catch(() => null)
+  const dataText = await $.fs.read(`${realRoot}/${id}/data.json`).catch(() => null)
   const data = dataText === null ? null : readData(dataText, id)
   if (data === null) {
     await set('unreadable')
@@ -1485,7 +1489,7 @@ async function drawCard($: Host, e: { requestId: string; surface: string; props:
     let linkBody: unknown
     if (!isHere) linkBody = <Text dimColor>{MESSAGES['same-host']}</Text>
     else {
-      const args = resultUrlArgs(card.id, card.view, card.view === 'record' ? card.row + 1 : undefined)
+      const args = resultUrlArgs(card.id, card.view, card.view === 'record' ? card.row + 1 : undefined, hasResultView())
       const want = args === null ? null : fingerprint(JSON.stringify(args))
       const st = card.link
       const t = await nowMs($)

@@ -333,3 +333,31 @@ test('the model tools cannot reach the result store or the capture folder', asyn
   }
   expect(reached).toHaveLength(allowed.length)
 })
+
+test('a quoted whole argument with spaces is plain; a quoted forbidden flag still is not', () => {
+  for (const cmd of [
+    "datatug query run --db a --sql 'select 1'",
+    'datatug query run --db a --sql "select * from Album where Title = 1"',
+    "datatug query run --db a --sql 'select 1' --format json",
+    "datatug query run --db a --sql ''",
+  ]) {
+    const c = classify(cmd, false)
+    expect({ cmd, kind: c.kind }).toEqual({ cmd, kind: 'plain' })
+  }
+  const c = classify("datatug query run --db a --sql 'select 1' --format json", false)
+  expect(c).toEqual({ kind: 'plain', head: 'datatug query run', tail: " --db a --sql 'select 1' --format json", format: 'json' })
+  for (const cmd of [
+    "datatug query run --db a --sql 'select 1",
+    "datatug query run --db a --sql 'select 1'x",
+    "datatug query run --db a --sql 'it\"s here'",
+    "datatug query run --db a --sql 'select 1' '--result-id zz'",
+    "datatug query run --db a '--client x'",
+    "datatug query run --db a '--result-rows=5 more'",
+    "datatug query run --db a --sql 'select $(id)'",
+    "datatug query run --db a --sql 'select 1; select 2'",
+    "datatug query run --db a --sql 'select 1' '--'",
+  ]) {
+    const d = classify(cmd, false)
+    expect({ cmd, kind: d.kind }).toEqual({ cmd, kind: 'deny' })
+  }
+})
