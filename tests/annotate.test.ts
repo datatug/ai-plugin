@@ -4,7 +4,7 @@ import { ANNOTATE_MIN_CLI_VERSION, annotateArgs, isPersonPrompt, keptPrompt } fr
 import { fakeWorld as world, result } from './card-fixtures'
 
 // The default fake CLI is older than the verb; these tests run against one that may have it.
-const fakeWorld = (on: any, files: Record<string, string>, over: Record<string, unknown> = {}) => world(on, files, { version: '0.100.2', ...over })
+const fakeWorld = (on: any, files: Record<string, string>, over: Record<string, unknown> = {}) => world(on, files, { version: '0.101.0', ...over })
 
 const CMD = 'datatug query run --db datatug://demo/chinook --from Album --no-policies'
 const run = ($: any, id: string, command = CMD) => $.tool.call({ tool: 'Bash', tool_use_id: id, command } as never)
@@ -88,7 +88,7 @@ test('a CLI older than the verb is not asked', async ($, on) => {
 })
 
 test('the first CLI that may have the verb is asked, and so is a development build', async ($, on) => {
-  const cli = fakeWorld(on, result('t1'), { version: '0.100.2' })
+  const cli = fakeWorld(on, result('t1'), { version: '0.101.0' })
   await say($)
   await run($, 't1')
   expect(cli.stdins).toHaveLength(1)
