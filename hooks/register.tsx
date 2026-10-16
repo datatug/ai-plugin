@@ -5,6 +5,7 @@ import { MIN_CLI_VERSION, VERSION_ARGS, isOlder, missingCliText, parseVersion, t
 import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, bigIntegers, fingerprint, isSameHost, isUnknownCommand, parseDevHost, readLink, recordKey, sourceUnavailableText, urlArgs } from '../lib/links.js'
 import { CARD_MIN_CLI_VERSION, LEGACY_TEXT, MAX_DATA_BYTES, MAX_META_BYTES, OPEN_MIN_CLI_VERSION, RESULT_VIEW_MIN_CLI_VERSION, STATE_TEXT, TEXT, UNAVAILABLE_TEXT, VIEWS, VIEW_LABELS, fallbackOf, isRef, readData, readLocator, readMeta, resultId, resultSummary, resultUrlArgs, statLandsAt, storeProblem, uiCommand } from '../lib/results.js'
 import { ANNOTATE_MIN_CLI_VERSION, annotateArgs, keptPrompt } from '../lib/annotate.js'
+import { MORE_TEXT, ROW_COUNTS, failureReason, moreArgs, moreErrorText, moreGate, moreId } from '../lib/more.js'
 import { isProjectView } from '../lib/command.js'
 import { FAILED_TEXT, STORE_TEXT, bashNamesStore, classify, normalizePath, pathInStore } from '../lib/bash.js'
 import { columnPage, headerLine, historyKeys, historyPick, nextSort, resultTitle, sortedOrder, toCsv, toJson } from '../lib/rows.js'
@@ -1205,14 +1206,26 @@ const canAnnotate = () => bashVersion === null || !isOlder(bashVersion, parseVer
 // Results already handed their prompt: once per result.
 const annotated = new Set<string>()
 
-// Stores the person's latest prompt with a result, through the CLI's standard input: never an argument or
-// the environment. Best effort and silent: a CLI without the verb, a failure or a timeout is dropped, with
-// no retry, and nothing of the prompt or the CLI's answer is read, logged or shown.
-async function annotateResult($: Host, id: string): Promise<void> {
+// The prompt each recent first result was stored with, so a "More rows" result gets its call's own prompt
+// and not whatever the person said since. Memory only and bounded; never logged, drawn or in an argument.
+const MAX_PROMPTS = 32
+const promptOf = new Map<string, string>()
+function rememberPrompt(id: string, text: string) {
+  promptOf.delete(id)
+  promptOf.set(id, text)
+  while (promptOf.size > MAX_PROMPTS) promptOf.delete(promptOf.keys().next().value as string)
+}
+
+// Stores a prompt with a result, through the CLI's standard input: never an argument or the environment.
+// `prompt` is the text to store ('' for none); left out, it is the person's latest prompt. Best effort and
+// silent: a CLI without the verb, a failure or a timeout is dropped, with no retry, and nothing of the
+// prompt or the CLI's answer is read, logged or shown.
+async function annotateResult($: Host, id: string, prompt?: string): Promise<void> {
   try {
     if (!canAnnotate() || annotated.has(id)) return
     annotated.add(id)
-    const text = await read($, lastPrompt)
+    const text = prompt ?? (await read($, lastPrompt))
+    if (prompt === undefined) rememberPrompt(id, text)
     if (text === '') return
     const cwd = await $.session.cwd().catch(() => undefined)
     await $.process.run(['datatug', ...annotateArgs(id)], { ...(cwd === undefined ? {} : { cwd }), stdin: text, timeoutMs: 10000, env: cliEnv() })
@@ -1286,6 +1299,67 @@ async function loadCard($: Host, key: string, id: string): Promise<CardMeta | nu
   await update($, latestClosed, cur => cur.filter(k => k !== key && !dropped.includes(k)))
   await update($, latestShown, () => '')
   return m.meta
+}
+
+// Cards with a "More rows" read in flight: one per card, so a second press while it runs does nothing.
+const moreBusy = new Set<string>()
+
+// Reads the card's table again with `n` rows and shows that result in place of the shown one. The call is
+// the card's own (a fixed argument list, no shell), never the model's: the model is not told. A size that
+// was read before (`result-id-in-use`) is loaded from the store instead.
+async function moreRows($: Host, key: string, n: number): Promise<void> {
+  if (moreBusy.has(key)) return
+  moreBusy.add(key)
+  const card = memberOf(cards, { requestId: key })
+  try {
+    const cur = await read($, card)
+    const base = cur.base ?? cur.id
+    const gate = cur.status === 'ready' && cur.meta !== undefined ? moreGate(cur.meta, base) : null
+    const id = moreId(base, n)
+    if (gate === null || !gate.ok || id === null || cur.id === id) return
+    const args = moreArgs(gate.dbRef, gate.table, n, id)
+    if (args === null) return
+    const previous = cur.id
+    await update($, card, c => ({ ...c, base, more: { n, status: 'loading', text: '' } }))
+    const fail = (reason: string | null) => update($, card, c => ({ ...c, more: { n, status: 'error', text: moreErrorText(reason) } }))
+    const cwd = await $.session.cwd().catch(() => undefined)
+    const ran = await $.process.run(['datatug', ...args], { ...(cwd === undefined ? {} : { cwd }), timeoutMs: 30000, env: cliEnv() }).catch(() => null)
+    if (ran === null) return void (await fail('unreachable'))
+    const reason = ran.exitCode === 0 ? null : (failureReason(ran.stdout, ran.stderr) ?? 'query-failed')
+    if (reason !== null && reason !== 'result-id-in-use') return void (await fail(reason))
+    const meta = await loadCard($, key, id)
+    // What was loaded must be this table of this database, read plainly: a stored result of that name is
+    // not trusted for being there.
+    const q = meta?.query
+    if (meta === null || meta.kind !== 'from' || q?.from !== gate.table || q.dbRef !== gate.dbRef || q.policy !== 'none') {
+      await loadCard($, key, previous)
+      return void (await fail('unshown'))
+    }
+    await update($, card, c => ({ ...c, rows: n, more: undefined }))
+    // Only a result this call wrote gets the prompt of the call it came from.
+    if (reason === null) void annotateResult($, id, promptOf.get(base) ?? '')
+  } catch {
+    await update($, card, c => ({ ...c, more: { n, status: 'error', text: moreErrorText(null) } })).catch(() => undefined)
+  } finally {
+    moreBusy.delete(key)
+  }
+}
+
+// Returns the card to the first result of its call.
+async function showOriginal($: Host, key: string): Promise<void> {
+  if (moreBusy.has(key)) return
+  moreBusy.add(key)
+  const card = memberOf(cards, { requestId: key })
+  try {
+    const cur = await read($, card)
+    if (cur.base === undefined || cur.base === cur.id) return
+    await update($, card, c => ({ ...c, rows: undefined, more: undefined }))
+    await loadCard($, key, cur.base)
+  } catch {
+    // the card shows what it has
+  } finally {
+    moreBusy.delete(key)
+  }
 }
 
 // One constant line in the transcript for the first result of a session, so a card the engine folded into a count line,
@@ -1774,6 +1848,35 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
     const done = await ($.ui as unknown as { copy: (a: { text: string; surface: string }) => Promise<{ isCopied: boolean }> }).copy({ text, surface: e.surface }).catch(() => ({ isCopied: false }))
     void $.ui.toast(done.isCopied ? `Copied ${out.length} row${out.length === 1 ? '' : 's'} as ${kind}` : 'Could not copy the rows; this surface has no clipboard')
   }
+  // "More rows": the row counts of the same table, only where the card can read it again as it was read.
+  const base = card.base ?? card.id
+  const gate = moreGate(meta, base)
+  const reading = card.more?.status === 'loading'
+  const original = card.base !== undefined && card.base !== card.id
+  const rowsButtons = !gate.ok ? null : (
+    <Box key={k('rows-more')} flexDirection="row" gap={1} flexWrap="wrap">
+      <Text dimColor>Rows</Text>
+      {ROW_COUNTS.map(n =>
+        reading ? (
+          <Text key={k('more', n)} dimColor>{`${card.rows === n ? '●' : '○'} ${n}`}</Text>
+        ) : (
+          <Button key={k('more', n)} plain onPress={() => void moreRows($, key, n)}>
+            {`${card.rows === n ? '●' : '○'} ${n}`}
+          </Button>
+        ),
+      )}
+      {original && !reading && (
+        <Button key={k('more', 'original')} plain onPress={() => void showOriginal($, key)}>
+          Original
+        </Button>
+      )}
+    </Box>
+  )
+  const rowsNote = !gate.ok ? (
+    <Text dimColor>{MORE_TEXT[gate.reason as keyof typeof MORE_TEXT]}</Text>
+  ) : card.more === undefined ? null : (
+    <Text dimColor>{card.more.status === 'loading' ? `Reading ${card.more.n} rows…` : card.more.text}</Text>
+  )
   // In the transcript the card is a bordered, padded block with a blank line above and below, like the
   // panel's cards; in the panel it sits inside the "Latest result" card, which has the border.
   const frame = hotkeys
@@ -1808,7 +1911,9 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
           <Button key={k('rows-json')} plain onPress={() => void copyRows('JSON')}>
             Copy JSON
           </Button>
+          {rowsButtons}
         </Box>
+        {rowsNote}
         {body}
         {cmdSection}
       </Box>

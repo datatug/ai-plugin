@@ -139,6 +139,9 @@ export type CardMeta = {
   kind: string
   // The saved query's id, for a saved query; null otherwise.
   savedId: string | null
+  // What "More rows" needs to read the table again, as meta.json wrote it (null when absent or not a
+  // plain bounded string); never drawn.
+  query: { from: string | null; policy: string | null; dbRef: string | null; text: string | null }
   rows: { kept: number; hasMore: boolean }
   columns: {
     name: string
@@ -180,6 +183,13 @@ export type CardState = {
   picked?: boolean
   // The Table cell opened in full under the grid: its row in the loaded order and its column name.
   cell?: { row: number; col: string }
+  // "More rows": the id of the first result of this call, which Original returns to (absent until a row
+  // count was pressed); `id` is the result shown now.
+  base?: string
+  // The row count the shown result was read with by a press; absent for the first result.
+  rows?: number
+  // A row count being read (loading), or the line saying why it was not (error); path-free.
+  more?: { n: number; status: 'loading' | 'error'; text: string }
 }
 
 declare module 'claude-code' {
