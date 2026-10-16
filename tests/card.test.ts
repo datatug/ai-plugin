@@ -101,10 +101,79 @@ test('a row number opens that row in the Record view of the same card', async ($
   const drawn = await text(tree)
   expect(drawn.includes('$key')).toBe(false)
   expect(drawn).toContain('9007199254740993')
-  await tree.press({ key: key('r1', 'grid'), link: { href: `https://datatug.invalid/qr/${fp('r1')}/row/2` } } as never)
+  // The number is a Button, not a link: nothing in the card carries the placeholder address.
+  expect(drawn.includes('datatug.invalid')).toBe(false)
+  expect((await tree.findAll({ type: 'Link' } as never)).filter((l: any) => !JSON.stringify(l).includes('datatug.app'))).toHaveLength(0)
+  expect(await tree.findAll({ type: 'Markdown' } as never)).toHaveLength(0)
+  expect(drawn).toContain(key('r1', 'row', 2))
+  await tree.press({ key: key('r1', 'row', 2) } as never)
   const rec = await text(tree)
   expect(rec).toContain('Row 3 of 3')
   expect(rec).toContain('Carol')
+  expect(rec.includes('datatug.invalid')).toBe(false)
+})
+
+test('the Record view offers Open row in DataTug, from the same link call as the table link', async ($, on) => {
+  const cli = fakeWorld(on, result('o1'))
+  await run($, 'o1')
+  const tree = await $.ui.mount(toolUse('o1', CMD) as never)
+  let drawn = await text(tree)
+  expect(drawn).toContain('Open in DataTug')
+  expect(drawn.includes('Open row in DataTug')).toBe(false)
+  await tree.press({ key: key('o1', 'row', 1) } as never)
+  await text(tree)
+  drawn = await text(tree)
+  expect(drawn).toContain('Open row in DataTug')
+  expect(drawn).toContain('result/o1?view=record&row=2#code=c0de')
+  expect(cli.runs.some(a => a.join(' ') === 'datatug daemon url --result o1 --view=record --row 2 --format json')).toBe(true)
+  // No code is drawn anywhere but in the link, and no press minted one beyond the view's own ask.
+  expect(cli.logs.join(' ').includes('c0de')).toBe(false)
+  expect(cli.toasts.join(' ').includes('c0de')).toBe(false)
+})
+
+test('the transcript card has a border, inner padding and an outer margin; the panel adds no second frame', async ($, on) => {
+  fakeWorld(on, result('b1'))
+  await run($, 'b1')
+  const tree = await $.ui.mount(toolUse('b1', CMD) as never)
+  const frame = (await tree.findAll({ type: 'Box' } as never)).map((b: any) => b.props ?? {}).find((p: any) => p.borderStyle === 'round' && p.paddingX === 1 && p.marginTop === 1 && p.marginBottom === 1)
+  expect(frame).toBeDefined()
+  const pane = await $.ui.mount({ plugin: 'datatug', surface: 'terminal', component: 'Pane', requestId: 'datatug', props: { bodyColumns: 100 } } as never)
+  const margins = (await pane.findAll({ type: 'Box' } as never)).filter((b: any) => b.props?.marginTop === 1 && b.props?.marginBottom === 1 && b.props?.borderStyle === 'round')
+  expect(margins).toHaveLength(0)
+})
+
+test('the terminal command is a labelled section: a blank line above, a dim frame, Copy under it, and the link row apart', async ($, on) => {
+  fakeWorld(on, result('c1'))
+  await run($, 'c1')
+  const tree = await $.ui.mount(toolUse('c1', CMD) as never)
+  const boxes = (await tree.findAll({ type: 'Box' } as never)).map((b: any) => b.props ?? {})
+  expect(boxes.some((p: any) => p.marginTop === 1 && p.flexDirection === 'column' && !p.borderStyle)).toBe(true)
+  expect(boxes.some((p: any) => p.borderStyle === 'round' && p.borderDimColor === true)).toBe(true)
+  const drawn = await text(tree)
+  const at = (needle: string) => drawn.indexOf(needle)
+  expect(at('Open in DataTug')).toBeGreaterThan(-1)
+  expect(at('Check again')).toBeGreaterThan(at('Open in DataTug'))
+  expect(at('Open these records in the DataTug terminal UI')).toBeGreaterThan(at('Check again'))
+  expect(at('datatug ui --result c1')).toBeGreaterThan(at('Open these records'))
+  expect(at(key('c1', 'copy'))).toBeGreaterThan(at('datatug ui --result c1'))
+  expect(drawn.includes('terminal UI:')).toBe(false)
+})
+
+test('the row of a call with a card does not draw the model-facing sentence; the model keeps it', async ($, on) => {
+  const cli = fakeWorld(on, result('m1'))
+  const told = JSON.stringify(await run($, 'm1'))
+  expect(told).toContain('withheld from you')
+  expect(told.includes('ask the user')).toBe(false)
+  const props = { ...toolUse('m1', CMD).props, output: { stdout: 'DataTug query returned 3 rows. The rows are shown to the user in a DataTug result card and are withheld from you.', stderr: '' } }
+  await $.ui.mount({ ...toolUse('m1', CMD), props } as never)
+  expect(JSON.stringify(cli.outputs.m1)).not.toContain('withheld')
+  expect(JSON.stringify(cli.outputs.m1)).toContain('result card is below')
+  // A call without a card keeps its output as it was.
+  await $.ui.mount({ ...toolUse('m2', 'ls'), props: { ...toolUse('m2', 'ls').props, output: { stdout: 'a b', stderr: '' } } } as never)
+  expect(JSON.stringify(cli.outputs.m2)).toContain('a b')
+  const res = { plugin: 'datatug', surface: 'terminal', component: 'ToolResult', requestId: 'm1', props: { tool_use_id: 'm1', tool: 'Bash', output: props.output, isErrored: false } }
+  await $.ui.mount(res as never)
+  expect(JSON.stringify(cli.resultOutputs.m1)).not.toContain('withheld')
 })
 
 test('names open the side-panel cards through the result reference, never the opened database', async ($, on) => {
@@ -416,9 +485,12 @@ test('hostile names are drawn as text and never reach the link or the command', 
   for (const v of ['table', 'record', 'columns', 'sources', 'related']) {
     await tree.press({ key: key('j1', 'view', v) } as never)
     const drawn = await text(tree)
-    const grid = (await tree.find({ key: key('j1', 'grid') } as never)) as any
-    if (v === 'table') expect(String(grid?.props?.text ?? '').length).toBeGreaterThan(0)
-    expect({ v, link: String(grid?.props?.text ?? '').includes('](https://evil.example') }).toEqual({ v, link: false })
+    expect({ v, markdown: (await tree.findAll({ type: 'Markdown' } as never)).length }).toEqual({ v, markdown: 0 })
+    // The table breaks a web address so no terminal links it.
+    if (v === 'table') {
+      expect(drawn).toContain('evil.example')
+      expect(drawn.includes('https://evil.example')).toBe(false)
+    }
     expect({ v, href: (await tree.findAll({ type: 'Link' } as never)).some((l: any) => JSON.stringify(l).includes('evil')) }).toEqual({ v, href: false })
     expect({ v, control: /\\u001b|\\u0007/.test(drawn) }).toEqual({ v, control: false })
   }
@@ -435,16 +507,15 @@ test('fifty rows of ten wide escapable columns stay well under the drawing bound
   await run($, 'big')
   const tree = await $.ui.mount(toolUse('big', CMD) as never)
   expect(await text(tree)).toContain('Show 30 more')
-  await tree.press({ key: key('big', 'grid'), link: { href: `https://datatug.invalid/qr/${fp('big')}/more` } } as never)
-  const grid = (await tree.find({ key: key('big', 'grid') } as never)) as any
-  const md = String(grid?.props?.text ?? grid?.text ?? '')
+  await tree.press({ key: key('big', 'more') } as never)
+  const md = await text(tree)
   expect(md.length).toBeGreaterThan(1000)
-  expect(md.length).toBeLessThan(100000)
-  expect(md).toContain('/row/49')
+  expect(md.length).toBeLessThan(400000)
+  expect(md).toContain(key('big', 'row', 49))
   await tree.press({ key: key('big', 'next50') } as never)
-  const page2 = JSON.stringify(await tree.find({ key: key('big', 'grid') } as never))
-  expect(page2).toContain('/row/50')
-  expect(page2.includes('/row/49)')).toBe(false)
+  const page2 = await text(tree)
+  expect(page2).toContain(key('big', 'row', 50))
+  expect(page2.includes(key('big', 'row', 49))).toBe(false)
   expect(await text(tree)).toContain('◀ Prev 50')
 })
 

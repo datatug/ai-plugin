@@ -138,3 +138,61 @@ test('the panel shows no result section before any result', async ($, on) => {
   const pane = await $.ui.mount(PANE_ARGS as never)
   expect(await text(pane)).not.toContain('Latest result')
 })
+
+test('the panel puts Latest result after the context bag, with a horizontal rule between sections', async ($, on) => {
+  fakeWorld(on, result('o1'))
+  await run($, 'o1')
+  const pane = await $.ui.mount(PANE_ARGS as never)
+  const drawn = await text(pane)
+  const at = (needle: string) => drawn.indexOf(needle)
+  expect(at('card-project')).toBeGreaterThan(-1)
+  expect(at('card-bag')).toBeGreaterThan(at('card-project'))
+  expect(at('card-latest')).toBeGreaterThan(at('card-bag'))
+  // Every other section the person opens comes after the result.
+  expect(at('card-opendb')).toBeGreaterThan(at('card-latest'))
+  const rule = '─'.repeat(100)
+  expect(drawn.split(rule).length - 1).toBeGreaterThanOrEqual(3)
+  // The rule sits between neighbours: never first, never last.
+  expect(at(rule)).toBeGreaterThan(at('card-project'))
+  expect(drawn.lastIndexOf(rule)).toBeLessThan(drawn.lastIndexOf('card-opendb'))
+})
+
+test('the Latest result section has a close button that clears it and leaves the transcript card', async ($, on) => {
+  fakeWorld(on, { ...result('x1'), ...result('x2') })
+  await run($, 'x1')
+  const row = await $.ui.mount(toolUse('x1', CMD) as never)
+  const pane = await $.ui.mount(PANE_ARGS as never)
+  let drawn = await text(pane)
+  expect(drawn).toContain('latest-close')
+  expect(drawn).toContain('✕')
+  expect(drawn).toContain('Latest result')
+  await pane.press({ key: 'latest-close' } as never)
+  drawn = await text(pane)
+  expect(drawn.includes('Latest result')).toBe(false)
+  expect(drawn.includes('SECRET-ALICE')).toBe(false)
+  // The panel's other cards stay, and the transcript card is untouched and still interactive.
+  expect(drawn).toContain('card-bag')
+  expect(await text(row)).toContain('SECRET-ALICE')
+  await row.press({ key: `qr:${fpOf('x1')}:view:columns` } as never)
+  expect(await text(row)).toContain('● Columns')
+  expect((await text(pane)).includes('Latest result')).toBe(false)
+  // A newer result shows again.
+  await run($, 'x2')
+  expect(await text(pane)).toContain('Latest result')
+})
+
+test('the close button has a hotkey, so the panel can be cleared from the keyboard', async ($, on) => {
+  fakeWorld(on, result('h1'))
+  await run($, 'h1')
+  const drawn = await text(await $.ui.mount(PANE_ARGS as never))
+  expect(drawn).toMatch(/"key":"latest-close"[^}]*"hotkey":"x"|"hotkey":"x"[^}]*"key":"latest-close"/)
+})
+
+function fpOf(s: string) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}

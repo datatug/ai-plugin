@@ -187,6 +187,7 @@ declare module 'claude-code' {
     links: Record<string, LinkState>
     cards: StateFamily<CardState>
     cardRows: string[]
+    latestClosed: string
   }
   }
 }
