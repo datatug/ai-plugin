@@ -359,7 +359,7 @@ The Table metadata, Table records and Record cards of a database that is a sourc
 
 **Given** the plugin metadata files for Claude Code, Codex, GitHub Copilot, Gemini CLI and Cursor
 **When** this Feature ships
-**Then** every metadata version is one shared DataTug plugin version (`0.3.4` with the polished result card).
+**Then** every metadata version is one shared DataTug plugin version (`0.3.5` with the polished result card).
 
 ## Open Questions
 
