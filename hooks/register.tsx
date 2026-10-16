@@ -6,6 +6,7 @@ import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, bigIntegers, 
 import { CARD_MIN_CLI_VERSION, LEGACY_TEXT, MAX_DATA_BYTES, MAX_META_BYTES, OPEN_MIN_CLI_VERSION, RESULT_VIEW_MIN_CLI_VERSION, STATE_TEXT, TEXT, UNAVAILABLE_TEXT, VIEWS, VIEW_LABELS, fallbackOf, isRef, readData, readLocator, readMeta, resultId, resultSummary, resultUrlArgs, statLandsAt, storeProblem, uiCommand } from '../lib/results.js'
 import { isProjectView } from '../lib/command.js'
 import { FAILED_TEXT, STORE_TEXT, bashNamesStore, classify, normalizePath, pathInStore } from '../lib/bash.js'
+import { headerLine, nextSort, sortedOrder, toCsv, toJson } from '../lib/rows.js'
 import { stripUnsafe } from '../lib/text.js'
 import { canDrawPane } from '../lib/view.js'
 import { registerProject } from './project.js'
@@ -84,6 +85,8 @@ const MAX_CARDS = 10
 // The result the person closed in the panel (its card key), or ''. The panel shows no "Latest result"
 // while the newest card is that one; the transcript row keeps its card, and a newer result shows again.
 const latestClosed = atom({ plugin: 'datatug', key: 'latestClosed' } as const, '')
+// Whether the person has been told, in the transcript, where the result card is: said once per session.
+const noticeShown = atom({ plugin: 'datatug', key: 'noticeShown' } as const, false)
 
 // Every datatug call the mod makes names the mod as its caller, so the CLI keeps the local DataTug
 // agent (the daemon the web links open) running as a side effect of the cards' own calls.
@@ -1239,7 +1242,7 @@ async function loadCard($: Host, key: string, id: string): Promise<CardMeta | nu
     return null
   }
   const canOpen = canOpenElsewhere()
-  await update($, card, cur => ({ ...cur, id, status: 'ready', view: 'table', row: 0, shown: 20, page: 0, meta: m.meta, data, canOpen, link: undefined }))
+  await update($, card, cur => ({ ...cur, id, status: 'ready', view: 'table', row: 0, shown: 20, page: 0, meta: m.meta, data, canOpen, link: undefined, sort: undefined }))
   let dropped: string[] = []
   await update($, cardRows, cur => {
     const next = [...cur.filter(k => k !== key), key]
@@ -1250,7 +1253,7 @@ async function loadCard($: Host, key: string, id: string): Promise<CardMeta | nu
   return m.meta
 }
 
-// One constant line in the transcript for each result, so a card the engine folded into a count line,
+// One constant line in the transcript for the first result of a session, so a card the engine folded into a count line,
 // refused or failed to draw is never silent. `$.ui.log` is the transcript line (dim, not sent to the
 // model); `$.ui.notice` only puts a line under an open permission dialog. No path, id, row or command.
 const NOTICE_PLACED = 'DataTug: result card above; ctrl+x tab to use it in the DataTug panel, Esc returns (ctrl+o expands folded tool calls).'
@@ -1260,7 +1263,13 @@ async function announceCard($: Host): Promise<void> {
     // The panel shows the newest card with the views as focusable buttons. Opened without `focus`: it
     // never takes the keys from what the person is typing. An open panel is only redrawn by the state.
     const opened = await ($ as unknown as { ui: { open: (p: { id: string; title: string }) => Promise<{ isPlaced?: boolean } | undefined> } }).ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
-    ;($ as unknown as { ui: { log: (text: string) => void } }).ui.log(opened?.isPlaced === true ? NOTICE_PLACED : NOTICE_UNPLACED)
+    // Said once per session, whichever line it was: later results draw their card without it.
+    let isFirst = false
+    await update($, noticeShown, cur => {
+      isFirst = !cur
+      return true
+    })
+    if (isFirst) ($ as unknown as { ui: { log: (text: string) => void } }).ui.log(opened?.isPlaced === true ? NOTICE_PLACED : NOTICE_UNPLACED)
   } catch {
     // a line that cannot be drawn is not worth failing the query for
   }
@@ -1344,16 +1353,83 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
   const instRef = (instance: string) => meta.participants.find(p => p.instance === instance)?.db ?? dbRef0
   const unavailable = (reason: string | undefined) => (reason === undefined ? null : <Text dimColor>{UNAVAILABLE_TEXT[reason as keyof typeof UNAVAILABLE_TEXT] ?? 'Not known for this result'}</Text>)
 
+  // The web link and the terminal command: only from a CLI that opens a result elsewhere. The link (or
+  // the line saying why there is none) goes top right of the card, on the header's row; Check again
+  // goes beside the columns note when the Table view has one, else beside the link.
+  let linkNode: unknown = null
+  let linkLen = 0
+  let checkNode: unknown = null
+  let cmdSection: unknown = null
+  const openLabel = card.view === 'record' ? 'Open row in DataTug ↗' : 'Open in DataTug ↗'
+  const command = uiCommand(card.id)
+  if (card.canOpen === true && command !== null) {
+    const isHere = isSameHost(e.surface, await overSsh($))
+    if (!isHere) {
+      linkNode = <Text dimColor>{MESSAGES['same-host']}</Text>
+      linkLen = MESSAGES['same-host'].length
+    } else {
+      const args = resultUrlArgs(card.id, card.view, card.view === 'record' ? card.row + 1 : undefined, hasResultView())
+      const want = args === null ? null : fingerprint(JSON.stringify(args))
+      const st = card.link
+      const t = await nowMs($)
+      const fresh = st !== undefined && st.req === want && st.status !== 'checking' && st.isStale !== true && t - st.at < LINK_TTL_MS
+      const held = hrefs.get(`qr:${key}`)
+      if (want !== null && (!fresh || (st.status === 'ok' && held?.req !== want))) void fetchCardLink($, key, st !== undefined && st.status === 'ok' && held?.req !== want)
+      if (fresh && st.status === 'ok' && held?.req === want) {
+        linkNode = <Link key={k('link')} href={held.href} label={openLabel} />
+        linkLen = openLabel.length
+      } else if (held !== undefined && st?.status === 'checking') {
+        linkNode = <Text dimColor>{`${openLabel} (updating…)`}</Text>
+        linkLen = openLabel.length + 12
+      } else {
+        const msg = MESSAGES[fresh && st.status !== 'ok' ? st.status : 'checking']
+        linkNode = <Text dimColor>{msg}</Text>
+        linkLen = msg.length
+      }
+      checkNode = (
+        <Button key={k('check')} plain onPress={() => void fetchCardLink($, key, true)}>
+          Check again
+        </Button>
+      )
+    }
+    const copy = async () => {
+      const done = await ($.ui as unknown as { copy: (a: { text: string; surface: string }) => Promise<{ isCopied: boolean }> }).copy({ text: command, surface: e.surface }).catch(() => ({ isCopied: false }))
+      if (!done.isCopied) void $.ui.toast('Select the command to copy it')
+    }
+    // The terminal command in a labelled section: a blank line above, a dim frame, Copy right under it.
+    cmdSection = (
+      <Box flexDirection="column" marginTop={1}>
+        <Text bold dimColor>
+          Open these records in the DataTug terminal UI
+        </Text>
+        <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
+          <Code key={k('cmd')} source={command} language="sh" />
+        </Box>
+        <Box flexDirection="row">
+          <Button key={k('copy')} plain onPress={() => void copy()}>
+            Copy
+          </Button>
+        </Box>
+      </Box>
+    )
+  }
+
+  // The loaded rows in the sort order (a copy of the order only; the stored rows are not touched), paged
+  // after sorting. `place[n]` is a row's place in the loaded order, which the Record view uses.
+  const cols = ordered.slice(0, MAX_COLS)
+  const sortCol = card.sort !== undefined && cols.includes(card.sort.col) ? card.sort : undefined
+  const place = sortedOrder(data.rows, sortCol === undefined ? -1 : data.columns.indexOf(sortCol.col), sortCol !== undefined && NUMERIC.has(typeOf(sortCol.col)), sortCol?.desc === true)
+  const marker = (c: string) => (sortCol?.col === c ? (sortCol.desc ? ' ▼' : ' ▲') : '')
+
   let body: unknown
   if (card.view === 'table') {
-    const cols = ordered.slice(0, MAX_COLS)
     const start = card.page * 50
-    const shown = data.rows.slice(start, start + card.shown)
+    const shown = place.slice(start, start + card.shown).map(i => data.rows[i])
     const canMore = card.page === 0 && card.shown < 50 && total > card.shown
     // A table of Boxes, not Markdown: the row number is a Button (a press opens that row in the Record
     // view), never a link, so no placeholder address is ever drawn or hovered. Values are plain Text.
-    const num = Math.max(2, String(start + shown.length).length)
-    const widths = cols.map(c => Math.min(28, Math.max(c.length, 3, ...shown.map(r => gridText(at(r, c)).length))) + 1)
+    const num = Math.max(2, String(total).length)
+    const widths = cols.map(c => Math.min(28, Math.max(c.length + marker(c).length, 3, ...shown.map(r => gridText(at(r, c)).length))) + 1)
     const gcell = (gk: string, w: number, child: unknown, right = false) => (
       <Box key={gk} width={w} flexShrink={1} minWidth={0} justifyContent={right ? 'flex-end' : 'flex-start'} paddingRight={1}>
         {child}
@@ -1361,20 +1437,32 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
     )
     body = (
       <Box flexDirection="column" key={k('grid')}>
-        {ordered.length > cols.length && <Text dimColor>{`First ${cols.length} of ${ordered.length} columns shown; the Record view shows them all.`}</Text>}
+        {ordered.length > cols.length && (
+          <Box flexDirection="row" gap={2} flexWrap="wrap">
+            <Text dimColor>{`First ${cols.length} of ${ordered.length} columns shown; the Record view shows them all.`}</Text>
+            {checkNode}
+          </Box>
+        )}
         <Box flexDirection="row" key={k('head')}>
           <Box width={num + 1} flexShrink={0} justifyContent="flex-end" paddingRight={1}>
             <Text bold dimColor>#</Text>
           </Box>
           {cols.map((c, j) =>
-            gcell(k('h', j), widths[j], <Text bold dimColor wrap="truncate-end">{gridText(c, 40)}</Text>, NUMERIC.has(typeOf(c)))
+            gcell(
+              k('h', j),
+              widths[j],
+              <Button key={k('sort', j)} plain onPress={() => set(cur => ({ ...cur, sort: nextSort(cur.sort, c), page: 0 }))}>
+                {`${gridText(c, 40)}${marker(c)}`}
+              </Button>,
+              NUMERIC.has(typeOf(c)),
+            )
           )}
         </Box>
         {shown.map((r, i) => (
           <Box key={k('r', start + i)} flexDirection="row">
             <Box width={num + 1} flexShrink={0} justifyContent="flex-end" paddingRight={1}>
-              <Button key={k('row', start + i)} plain onPress={() => set(c => ({ ...c, view: 'record', row: start + i }))}>
-                {String(start + i + 1)}
+              <Button key={k('row', start + i)} plain onPress={() => set(c => ({ ...c, view: 'record', row: place[start + i] }))}>
+                {String(place[start + i] + 1)}
               </Button>
             </Box>
             {cols.map((c, j) => (
@@ -1572,65 +1660,22 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
     )
   }
 
-  // The web link and the terminal command: only from a CLI that opens a result elsewhere.
-  let open: unknown = null
-  const openLabel = card.view === 'record' ? 'Open row in DataTug ↗' : 'Open in DataTug ↗'
-  const command = uiCommand(card.id)
-  if (card.canOpen === true && command !== null) {
-    const isHere = isSameHost(e.surface, await overSsh($))
-    let linkBody: unknown
-    if (!isHere) linkBody = <Text dimColor>{MESSAGES['same-host']}</Text>
-    else {
-      const args = resultUrlArgs(card.id, card.view, card.view === 'record' ? card.row + 1 : undefined, hasResultView())
-      const want = args === null ? null : fingerprint(JSON.stringify(args))
-      const st = card.link
-      const t = await nowMs($)
-      const fresh = st !== undefined && st.req === want && st.status !== 'checking' && st.isStale !== true && t - st.at < LINK_TTL_MS
-      const held = hrefs.get(`qr:${key}`)
-      if (want !== null && (!fresh || (st.status === 'ok' && held?.req !== want))) void fetchCardLink($, key, st !== undefined && st.status === 'ok' && held?.req !== want)
-      linkBody =
-        fresh && st.status === 'ok' && held?.req === want ? (
-          <Link key={k('link')} href={held.href} label={openLabel} />
-        ) : held !== undefined && st?.status === 'checking' ? (
-          <Text dimColor>{`${openLabel} (updating…)`}</Text>
-        ) : (
-          <Text dimColor>{MESSAGES[fresh && st.status !== 'ok' ? st.status : 'checking']}</Text>
-        )
-    }
-    const copy = async () => {
-      const done = await ($.ui as unknown as { copy: (a: { text: string; surface: string }) => Promise<{ isCopied: boolean }> }).copy({ text: command, surface: e.surface }).catch(() => ({ isCopied: false }))
-      if (!done.isCopied) void $.ui.toast('Select the command to copy it')
-    }
-    // Two labelled blocks with a blank line above each: the web link and its re-check on their own
-    // row, then the terminal command in a dim frame with Copy right under it.
-    open = (
-      <Box flexDirection="column" marginTop={1}>
-        <Box flexDirection="row" gap={2} alignItems="center">
-          {linkBody}
-          {isHere && (
-            <Button key={k('check')} plain onPress={() => void fetchCardLink($, key, true)}>
-              Check again
-            </Button>
-          )}
-        </Box>
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold dimColor>
-            Open these records in the DataTug terminal UI
-          </Text>
-          <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
-            <Code key={k('cmd')} source={command} language="sh" />
-          </Box>
-          <Box flexDirection="row">
-            <Button key={k('copy')} plain onPress={() => void copy()}>
-              Copy
-            </Button>
-          </Box>
-        </Box>
-      </Box>
-    )
+  // The header, the link on its right; stacked instead when the panel is too narrow for both.
+  const headerText = headerLine(meta, names.length)
+  const PRIVATE = ' (shown to you, not to Claude)'
+  const panelWidth = e.props.bodyColumns
+  const fits = !hotkeys || panelWidth === undefined || headerText.length + PRIVATE.length + linkLen + 8 <= panelWidth
+  const copyRows = async (kind: 'CSV' | 'JSON') => {
+    // The clipboard is for the person: the text goes to `ui.copy` and nowhere else.
+    const idx = ordered.map(n => data.columns.indexOf(n))
+    const out = place.map(i => data.rows[i])
+    const text =
+      kind === 'CSV'
+        ? toCsv(ordered, out.map(r => idx.map(j => r[j])))
+        : toJson(ordered, ordered.map(typeOf), out.map(r => idx.map(j => r[j])))
+    const done = await ($.ui as unknown as { copy: (a: { text: string; surface: string }) => Promise<{ isCopied: boolean }> }).copy({ text, surface: e.surface }).catch(() => ({ isCopied: false }))
+    void $.ui.toast(done.isCopied ? `Copied ${out.length} row${out.length === 1 ? '' : 's'} as ${kind}` : 'Could not copy the rows; this surface has no clipboard')
   }
-
-  const kept = meta.rows.kept
   // In the transcript the card is a bordered, padded block with a blank line above and below, like the
   // panel's cards; in the panel it sits inside the "Latest result" card, which has the border.
   const frame = hotkeys
@@ -1640,18 +1685,34 @@ async function drawCard($: Host, e: { requestId: string; surface: string; compon
     <Box flexDirection="column">
       {row}
       <Box {...frame}>
-        <Text dimColor>
-          {`${kept} row${kept === 1 ? '' : 's'}${meta.rows.hasMore ? ` (at least ${kept + 1})` : ''} x ${names.length} column${names.length === 1 ? '' : 's'} (shown to you, not to Claude)`}
-        </Text>
+        <Box key={k('head-row')} flexDirection={fits ? 'row' : 'column'} flexWrap={fits ? 'wrap' : 'nowrap'} justifyContent="space-between" columnGap={2}>
+          <Box flexShrink={1} minWidth={0}>
+            <Text dimColor wrap="truncate-end">{gridText(`${headerText}${PRIVATE}`, 300)}</Text>
+          </Box>
+          {linkNode !== null && (
+            <Box flexDirection="row" gap={2} flexShrink={0}>
+              {linkNode}
+              {card.view !== 'table' || ordered.length <= MAX_COLS ? checkNode : null}
+            </Box>
+          )}
+        </Box>
         <Box flexDirection="row" flexWrap="wrap" gap={1}>
-          {VIEW_KEYS.map((v, i) => (
-            <Button key={k('view', v)} plain {...(hotkeys ? { hotkey: String(i + 1) } : {})} onPress={() => set(c => ({ ...c, view: v }))}>
+          {VIEW_KEYS.map(v => (
+            <Button key={k('view', v)} plain onPress={() => set(c => ({ ...c, view: v }))}>
               {`${card.view === v ? '●' : '○'} ${VIEW_LABELS[v]}`}
             </Button>
           ))}
         </Box>
+        <Box flexDirection="row" gap={2}>
+          <Button key={k('rows-csv')} plain onPress={() => void copyRows('CSV')}>
+            Copy CSV
+          </Button>
+          <Button key={k('rows-json')} plain onPress={() => void copyRows('JSON')}>
+            Copy JSON
+          </Button>
+        </Box>
         {body}
-        {open}
+        {cmdSection}
       </Box>
     </Box>
   )
@@ -3004,8 +3065,9 @@ export const register: Register = (on, options) => {
     // member, so a press here and a press there are one state. Its views take the keys 1-5.
     const latest = latestKeys.at(-1)
     const latestState = latest === undefined || latest === closedKey ? NO_CARD : await read($, memberOf(cards, { requestId: latest }))
-    // "✕" closes the section (the transcript row keeps its card and can show it again by Load); the
-    // key x does the same while the panel holds the keys, and Esc, as everywhere, hands them back.
+    // "✕" closes the section (the transcript row keeps its card and can show it again by Load), and so
+    // does the key x. Not `plain`: a plain Button draws its hotkey as an "x:" prefix, a bracketed one
+    // draws the label alone, so the one symbol is both the icon and the key.
     const closeLatest = () => update($, latestClosed, () => latest ?? '')
     const latestCard =
       latest === undefined || latestState.status === 'none' ? null : (
@@ -3014,11 +3076,11 @@ export const register: Register = (on, options) => {
             <Text bold dimColor>
               Latest result
             </Text>
-            <Button key="latest-close" plain hotkey="x" onPress={() => void closeLatest()}>
-              ✕ Close
+            <Button key="latest-close" hotkey="x" role="dismiss" label="Close" onPress={() => void closeLatest()}>
+              ✕
             </Button>
           </Box>
-          {await drawCard($ as Host, { requestId: latest, surface: e.surface, component: e.component, props: {} }, null, latestState, true)}
+          {await drawCard($ as Host, { requestId: latest, surface: e.surface, component: e.component, props: { bodyColumns: (e.props as { bodyColumns?: number }).bodyColumns } }, null, latestState, true)}
         </Box>
       )
 

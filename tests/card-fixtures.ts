@@ -82,6 +82,8 @@ export type Cli = {
   files: Record<string, string>
   stats: Record<string, { kind: 'file' | 'dir'; size?: number; realPath?: string }>
   copied: boolean
+  // What the person's clipboard took (the test's only view of it).
+  clips: string[]
   toasts: string[]
   bash: string[]
   bashAnswer: (cmd: string) => unknown
@@ -144,6 +146,7 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
     files,
     stats: {},
     copied: true,
+    clips: [],
     toasts: [],
     bash: [],
     bashAnswer: () => ({ result: { stdout: '{"resultFiles":{"version":1},"rowsKept":3,"hasMore":false,"columns":5}\n', stderr: '' }, text: '', ref: {} }),
@@ -173,7 +176,10 @@ export function fakeWorld(on: any, files: Record<string, string>, over: Partial<
     cli.toasts.push(JSON.stringify(e))
     return { value: {} }
   })
-  on('ui.copy', () => ({ value: cli.copied ? { isCopied: true } : { isCopied: false, reason: 'remote' } }))
+  on('ui.copy', (_$: unknown, e: { text: string }) => {
+    if (cli.copied) cli.clips.push(e.text)
+    return { value: cli.copied ? { isCopied: true } : { isCopied: false, reason: 'remote' } }
+  })
   on('ui.render', (_$: any, e: any) => {
     cli.renders[e.requestId] = (cli.renders[e.requestId] ?? 0) + 1
     if (e.component === 'ToolGroup') cli.groups.push(e.props.isExpanded)
