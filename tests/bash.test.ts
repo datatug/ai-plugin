@@ -251,6 +251,7 @@ test('an explicit non-json --format is captured privately and the model is told 
   on('fs.read', () => ({ value: 'name\nSECRET-ALICE\n' }) as never)
   const removed: string[] = []
   on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    if (e.argv[1] === '--version') return { value: { exitCode: 0, stdout: '0.84.1\n', stderr: '' } } as never
     removed.push(e.argv.join(' '))
     return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
   })
@@ -272,6 +273,7 @@ test('a query moved to the background is not read, its capture is removed, and n
   })
   const removed: string[] = []
   on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    if (e.argv[1] === '--version') return { value: { exitCode: 0, stdout: '0.84.1\n', stderr: '' } } as never
     removed.push(e.argv.join(' '))
     return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
   })

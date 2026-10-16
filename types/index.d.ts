@@ -1,5 +1,7 @@
 export type GridResult = {
   id: string
+  // One dim line under a plain grid: why the session shows the grid and not the result card.
+  note?: string
   collection: string
   db?: string
   // The datatug:// reference of the project database the rows came from (Record links); absent for
@@ -24,6 +26,9 @@ export type GridView = {
   column?: string | null
   showTable?: boolean
   tableName?: string | null
+  // The full identity of the table a result card opened (project database, schema, name), so it is
+  // never matched by name alone; set only with tableName.
+  tableRef?: { env: string; source: string; schema: string; name: string } | null
   trail?: { current: string; selected: number }[]
 }
 
@@ -111,6 +116,8 @@ export type DbRecordsState = {
   message: string
   resultId: string | null
   page: number
+  // The datatug:// reference the records were read through when a result card opened them.
+  ref?: string
 }
 
 export type Bag = { isEnabled: boolean; entries: BagEntry[] }
@@ -118,9 +125,51 @@ export type Bag = { isEnabled: boolean; entries: BagEntry[] }
 // What a linked card shows: a link (status ok, its href kept in memory only) or one of the messages.
 export type LinkState = {
   req: string
-  status: 'checking' | 'ok' | 'down' | 'pending' | 'old-cli' | 'dev' | 'unavailable'
+  status: 'checking' | 'ok' | 'down' | 'pending' | 'old-cli' | 'dev' | 'unavailable' | 'no-result'
   at: number
   isStale?: boolean
+}
+
+export type CardView = 'table' | 'record' | 'columns' | 'sources' | 'related'
+
+// meta.json as a result card keeps it (lib/results.js readMeta): names cleaned and cut.
+export type CardMeta = {
+  dataBytes: number
+  db: { ref: string | null; project: string | null; env: string | null; source: string | null; driver: string }
+  kind: string
+  rows: { kept: number; hasMore: boolean }
+  columns: {
+    name: string
+    type: string
+    declaredType: string | null
+    nullable: boolean | null
+    pk: number | null
+    source: { instance: string; schema: string; relation: string; column: string } | null
+    foreignKeys: { refSchema: string; refRelation: string; refColumn: string }[]
+    encoding: string | null
+  }[]
+  participants: { instance: string; schema: string; relation: string; alias: string; db: string | null; kind: string; role: string; on: { left: string; right: string }[] }[]
+  related: { fromInstance: string; schema: string; relation: string; kind: string; direction: 'incoming' | 'outgoing'; cardinality: string; fields: { source: string; target: string }[] }[]
+  unavailable: { participants?: string; related?: string; declaredTypes?: string; columns?: string; query?: string }
+  counts: { columns: number; participants: number; related: number }
+}
+
+// One result card in the chat, keyed by the tool call's id.
+export type CardState = {
+  status: 'none' | 'ready' | 'load' | 'loading' | 'expired' | 'not-found' | 'incomplete' | 'unreadable' | 'too-large' | 'version' | 'no-locator' | 'fallback'
+  // The result id (the tool call's id made safe), '' before the call ran.
+  id: string
+  view: CardView
+  row: number
+  shown: number
+  page: number
+  // Why the call fell back to the grid (a key of LEGACY_TEXT), for status 'fallback'.
+  why?: string
+  // Whether the CLI that wrote it opens a result elsewhere (the command and the link).
+  canOpen?: boolean
+  meta?: CardMeta
+  data?: { columns: string[]; types: string[]; rows: (string | null)[][] }
+  link?: LinkState
 }
 
 declare module 'claude-code' {
@@ -136,6 +185,8 @@ declare module 'claude-code' {
     columnOrder: 'defined' | 'alpha' | 'type'
     dbRecords: DbRecordsState
     links: Record<string, LinkState>
+    cards: StateFamily<CardState>
+    cardRows: string[]
   }
   }
 }

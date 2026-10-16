@@ -1,15 +1,16 @@
-import { atom, read, update } from 'claude-code'
+import { atom, memberOf, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import { MIN_CLI_VERSION, VERSION_ARGS, isOlder, missingCliText, parseVersion, tooOldText } from '../lib/cli.js'
-import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, bigIntegers, fingerprint, isSameHost, parseDevHost, readLink, recordKey, sourceUnavailableText, urlArgs } from '../lib/links.js'
+import { LINK_MIN_CLI_VERSION, LINK_TTL_MS, MESSAGES, STATUS_ARGS, bigIntegers, fingerprint, isSameHost, isUnknownCommand, parseDevHost, readLink, recordKey, sourceUnavailableText, urlArgs } from '../lib/links.js'
+import { CARD_MIN_CLI_VERSION, LEGACY_TEXT, MAX_DATA_BYTES, MAX_META_BYTES, OPEN_MIN_CLI_VERSION, STATE_TEXT, TEXT, UNAVAILABLE_TEXT, VIEWS, VIEW_LABELS, fallbackOf, isRef, readData, readLocator, readMeta, resultId, resultSummary, resultUrlArgs, statLandsAt, storeProblem, uiCommand } from '../lib/results.js'
 import { isProjectView } from '../lib/command.js'
 import { FAILED_TEXT, STORE_TEXT, bashNamesStore, classify, normalizePath, pathInStore } from '../lib/bash.js'
 import { stripUnsafe } from '../lib/text.js'
 import { canDrawPane } from '../lib/view.js'
 import { registerProject } from './project.js'
 
-import type { Bag, BagEntry, DbRecordsState, DatabasesState, DbTableState, GridResult, GridView, LinkState, OpenDbState, ProjectsState, SchemaColumn, SchemaFk, SchemaState, SchemaTable } from '../types'
+import type { Bag, BagEntry, CardMeta, CardState, CardView, DbRecordsState, DatabasesState, DbTableState, GridResult, GridView, LinkState, OpenDbState, ProjectsState, SchemaColumn, SchemaFk, SchemaState, SchemaTable } from '../types'
 
 const PANE = 'datatug'
 const TITLE = 'DataTug'
@@ -73,6 +74,13 @@ const view = atom({ plugin: 'datatug', key: 'view' } as const, {
 // The "Open in DataTug" state of each linked card (table, records, record): what it shows and when it
 // was checked. Never the link itself, a key value or a row: the link is kept in memory only (`hrefs`).
 const links = atom({ plugin: 'datatug', key: 'links' } as const, {} as Record<string, LinkState>)
+// One result card per `datatug query run` the model ran with result files, keyed by its tool call id:
+// what a press changes redraws that card alone. A card reads only its member and `columnOrder`.
+const NO_CARD: CardState = { status: 'none', id: '', view: 'table', row: 0, shown: 20, page: 0 }
+const cards = atom({ plugin: 'datatug', key: 'cards' } as const, NO_CARD)
+// The cards that hold rows, oldest first: at most MAX_CARDS (a family cannot be listed).
+const cardRows = atom({ plugin: 'datatug', key: 'cardRows' } as const, [] as string[])
+const MAX_CARDS = 10
 
 // Every datatug call the mod makes names the mod as its caller, so the CLI keeps the local DataTug
 // agent (the daemon the web links open) running as a side effect of the cards' own calls.
@@ -81,6 +89,12 @@ const cliEnv = (env: Record<string, string> = {}) => ({ ...env, ...CLIENT })
 
 // The datatug version `/datatug` found (null: a development build; undefined: not checked since load).
 let cliVersion: number[] | null | undefined
+// How this session runs the model's `datatug query run`: with result files ('new') or through the
+// private capture ('legacy'); undefined until the first query asks. `legacyWhy` is a key of
+// LEGACY_TEXT, or null when the version probe failed. `bashVersion` is what the probe read.
+let bashMode: 'new' | 'legacy' | undefined
+let legacyWhy: string | null = null
+let bashVersion: number[] | null = null
 // The development web UI origin the person configured in the plugin's settings, or null.
 let devOrigin: string | null = null
 // Links the CLI printed and the mod checked, by card, with the request they answer. Memory only:
@@ -691,11 +705,15 @@ async function openRecordByKey($: Host, db: string, table: string, column: strin
 // The first 100 records of a table of the opened database. The CLI has no row limit yet, so the
 // rows are streamed as JSON lines and the stream is cut once 100 have arrived. They are stored as a
 // result, so pressing a row number opens the Record card like a row of a chat grid.
-async function openDbRecords($: Host, name: string, kept: string, known: number | null | undefined) {
+// With `explicit` (a datatug:// reference a result card names) it reads through that reference
+// alone, never the opened database.
+async function openDbRecords($: Host, name: string, kept: string, known: number | null | undefined, explicit?: string) {
   const run0 = openRun
-  await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'loading' }))
+  const refOnly = explicit !== undefined ? { ref: explicit } : {}
+  await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'loading', ...refOnly }))
   try {
-    const url = dbUrl !== '' ? dbUrl : kept
+    if (explicit !== undefined && !isRef(explicit)) throw new ModError('this database has no project reference')
+    const url = explicit ?? (dbUrl !== '' ? dbUrl : kept)
     if (url === '') throw new ModError('Open the database again: its connection string is not kept.')
     if (name.startsWith('-')) throw new ModError('unsupported table name')
     const child = $.process.spawn({
@@ -721,7 +739,7 @@ async function openDbRecords($: Host, name: string, kept: string, known: number 
     const id = `db:${name}`
     const parsed = parseRows(`[${lines.join(',')}]`, id, 'datatug query run')
     if (parsed === null || lines.length === 0) throw new ModError('the table has no records')
-    const linkRef = (await read($, openDb)).ref ?? ''
+    const linkRef = explicit ?? (await read($, openDb)).ref ?? ''
     const result: GridResult = {
       ...parsed,
       db: redact(url) === url ? url : '',
@@ -730,13 +748,13 @@ async function openDbRecords($: Host, name: string, kept: string, known: number 
       isTruncated: (known ?? 0) > lines.length,
       // Only the key-sized facts a Record link needs beside the parsed rows: the integers they round.
       ...(linkRef !== '' ? { linkRef } : {}),
-      openRun: run0,
+      ...(explicit === undefined ? { openRun: run0 } : {}),
       bigInts: lines.map(l => bigIntegers(l)),
     }
     await update($, results, all => ({ ...Object.fromEntries(Object.entries(all).slice(-9)), [id]: result }))
-    await update($, dbRecords, () => ({ name, status: 'ready', message: '', resultId: id, page: 0 }))
+    await update($, dbRecords, () => ({ name, status: 'ready', message: '', resultId: id, page: 0, ...refOnly }))
   } catch (err) {
-    await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'error', message: failure(err, 140) }))
+    await update($, dbRecords, () => ({ ...NO_RECORDS, name, status: 'error', message: failure(err, 140), ...refOnly }))
   }
 }
 
@@ -890,25 +908,26 @@ const reqId = (req: LinkReq): string | null => {
   return args === null ? null : fingerprint(JSON.stringify(args))
 }
 
+// Where one link's state is kept: the panel's `links` atom, or a result card's own member.
+type LinkStore = { get: () => Promise<LinkState | undefined>; set: (fn: (cur: LinkState | undefined) => LinkState | undefined) => Promise<unknown> }
+
 // Asks the CLI for one card's link (`daemon status` for the port, then `daemon url`; neither starts
 // the daemon or sends it a request) and keeps what the checks allow. Called once the card's own data
 // call has resolved; again when the link is older than LINK_TTL_MS, and on "Check again".
-async function fetchLink($: Host, card: string, req: LinkReq, force: boolean) {
-  const args = urlArgs(req)
-  if (args === null) return
+async function fetchLinkInto($: Host, card: string, args: string[], kind: string, store: LinkStore, force: boolean, minimum: string, rid?: string) {
   const id = fingerprint(JSON.stringify(args))
   if (fetching.get(card) === id) return
   // Claimed before any await, so two drawings at once never ask twice (each ask mints a code).
   fetching.set(card, id)
   let t = 0
   try {
-    const cur = (await read($, links))[card]
+    const cur = await store.get()
     t = await nowMs($)
     if (!force && cur !== undefined && cur.req === id && cur.status !== 'checking' && cur.isStale !== true && t - cur.at < LINK_TTL_MS) return
     hrefs.delete(card)
-    await update($, links, all => ({ ...all, [card]: { req: id, status: 'checking', at: t } }))
+    await store.set(() => ({ req: id, status: 'checking', at: t }))
     let next: { status: LinkState['status']; href?: string }
-    if (cliVersion !== undefined && cliVersion !== null && isOlder(cliVersion, parseVersion(LINK_MIN_CLI_VERSION) as number[])) {
+    if (cliVersion !== undefined && cliVersion !== null && isOlder(cliVersion, parseVersion(minimum) as number[])) {
       next = { status: 'old-cli' }
     } else {
       const cwd = await $.session.cwd()
@@ -918,24 +937,50 @@ async function fetchLink($: Host, card: string, req: LinkReq, force: boolean) {
           .then(r => ({ exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr ?? '' }))
           .catch(() => null)
       const status = await run(STATUS_ARGS)
-      next = readLink(status, status === null ? null : await run(args), req.kind, devOrigin)
+      next = readLink(status, status === null ? null : await run(args), kind, devOrigin, rid)
     }
     const at = await nowMs($)
     if (next.status === 'ok' && next.href !== undefined) hrefs.set(card, { req: id, href: next.href })
-    await update($, links, all => (all[card]?.req === id ? { ...all, [card]: { req: id, status: next.status, at } } : all))
+    await store.set(c => (c?.req === id ? { req: id, status: next.status, at } : c))
     // Once the link is old the card is drawn again, which asks the CLI again.
     try {
       $.clock.after(LINK_TTL_MS, () => {
-        void update($, links, all => (all[card]?.req === id && all[card]?.at === at ? { ...all, [card]: { ...(all[card] as LinkState), isStale: true } } : all))
+        void store.set(c => (c?.req === id && c.at === at ? { ...c, isStale: true } : c))
       })
     } catch {
       // no timer here: the next drawing checks the age
     }
   } catch {
-    await update($, links, all => (all[card]?.req === id ? { ...all, [card]: { req: id, status: 'unavailable', at: t } } : all)).catch(() => undefined)
+    await store.set(c => (c?.req === id ? { req: id, status: 'unavailable', at: t } : c)).catch(() => undefined)
   } finally {
     if (fetching.get(card) === id) fetching.delete(card)
   }
+}
+
+async function fetchLink($: Host, card: string, req: LinkReq, force: boolean) {
+  const args = urlArgs(req)
+  if (args === null) return
+  const store: LinkStore = {
+    get: async () => (await read($, links))[card],
+    set: fn =>
+      update($, links, all => {
+        const next = fn(all[card])
+        return next === all[card] ? all : next === undefined ? all : { ...all, [card]: next }
+      }),
+  }
+  await fetchLinkInto($, card, args, req.kind, store, force, LINK_MIN_CLI_VERSION)
+}
+
+// A result card's link, for its current view (and row, in the Record view).
+async function fetchCardLink($: Host, key: string, force: boolean) {
+  const card = await read($, memberOf(cards, { requestId: key }))
+  const args = resultUrlArgs(card.id, card.view, card.view === 'record' ? card.row + 1 : undefined)
+  if (args === null) return
+  const store: LinkStore = {
+    get: async () => (await read($, memberOf(cards, { requestId: key }))).link,
+    set: fn => update($, memberOf(cards, { requestId: key }), c => ({ ...c, link: fn(c.link) })),
+  }
+  await fetchLinkInto($, `qr:${key}`, args, 'result', store, force, OPEN_MIN_CLI_VERSION, card.id)
 }
 
 async function loadSchema($: Host, projectId: string | null) {
@@ -986,6 +1031,519 @@ async function loadSchema($: Host, projectId: string | null) {
   } catch (err) {
     await update($, schema, () => ({ projectId, status: 'error', tables: [], message: failure(err, 120) }))
   }
+}
+
+// The project, source and environment a datatug:// reference names, or null.
+export function refParts(ref: string | null | undefined): { project: string; source: string; env: string | null } | null {
+  if (typeof ref !== 'string' || !isRef(ref)) return null
+  const m = /^datatug:\/\/([^/?#]+)\/([^/?#]+)(?:\?env=([^&#]+))?$/.exec(ref)
+  if (m === null) return null
+  const dec = (x: string) => {
+    try {
+      return decodeURIComponent(x)
+    } catch {
+      return x
+    }
+  }
+  return { project: dec(m[1]), source: dec(m[2]), env: m[3] === undefined ? null : dec(m[3]) }
+}
+
+// A table of the project schema by its full identity: environment, source, schema and name together.
+export function findRef(tables: SchemaTable[], r: { env: string; source: string; schema: string; name: string }): SchemaTable | undefined {
+  return tables.find(t => t.source === r.source && (r.env === '' || t.env === r.env) && same(t.name, r.name) && (r.schema === '' || t.schema === '' || same(t.schema, r.schema)))
+}
+
+// Opens the panel on the project a reference names: selects it and loads its databases and schema.
+async function panelOnProject($: Host, project0: string) {
+  const sel = (await read($, project)).selected
+  if (sel !== project0) {
+    await update($, project, () => ({ selected: project0, isOpen: false }))
+    void loadDatabases($, project0)
+  }
+  const ps = await read($, projects)
+  if (ps.status === 'idle' || ps.status === 'error') void loadProjects($)
+  const cur = await read($, schema)
+  if (cur.projectId !== project0 || cur.status === 'idle' || cur.status === 'error') void loadSchema($, project0)
+  await $.ui.open({ id: PANE, title: TITLE })
+}
+
+// The side panel's Table or Column card for a table a result card names, found in the schema of the
+// reference's project by environment, source, schema and name. Module level: the result cards and
+// the panel both call it. It runs no query.
+async function gotoPanel($: Host, ref: string, target: { schema: string; table: string; column?: string | null; showTable?: boolean }) {
+  const parts = refParts(ref)
+  if (parts === null) return
+  await panelOnProject($, parts.project)
+  await update($, dbTable, () => ({ name: null, status: 'idle', message: '', result: null }))
+  await update($, dbRecords, () => NO_RECORDS)
+  await update($, view, cur => ({
+    ...cur,
+    tableName: target.table,
+    tableRef: { env: parts.env ?? '', source: parts.source, schema: target.schema, name: target.table },
+    column: target.column ?? null,
+    showTable: target.showTable === true,
+  }))
+  const go = () => void $.ui.scroll({ to: { key: 'card-detail' }, in: PANE, block: 'start' }).catch(() => undefined)
+  go()
+  try {
+    $.clock.after(150, go)
+  } catch {
+    // no timer here: the first attempt stands
+  }
+}
+
+// The side panel's Table records card for a table a result card names, read through that reference.
+async function openRefRecords($: Host, ref: string, table: string) {
+  const parts = refParts(ref)
+  if (parts === null) return
+  await panelOnProject($, parts.project)
+  await update($, dbTable, () => ({ name: null, status: 'idle', message: '', result: null }))
+  await openDbRecords($, table, '', undefined, ref)
+  void $.ui.scroll({ to: { key: 'card-dbrecords' }, in: PANE, block: 'start' }).catch(() => undefined)
+}
+
+// The record a foreign-key value of a result card points at, in the side panel's Record card.
+async function openRefRecord($: Host, ref: string, table: string, column: string, value: string) {
+  const parts = refParts(ref)
+  if (parts === null) return
+  await panelOnProject($, parts.project)
+  if (!(await openRecordByKey($, ref, table, column, value))) void $.ui.toast(`No ${clean(table).slice(0, 60)} record with ${clean(column).slice(0, 60)} = ${clean(value).slice(0, 40)}`)
+}
+
+// Decides, once per session, how the model's queries run: result files when the CLI is new enough and
+// its store is usable, else the private capture. A probe that fails takes the capture.
+async function sessionMode($: Host): Promise<'new' | 'legacy'> {
+  if (bashMode !== undefined) return bashMode
+  const cwd = await $.session.cwd().catch(() => undefined)
+  const run = (argv: string[]) => $.process.run(['datatug', ...argv], { ...(cwd === undefined ? {} : { cwd }), timeoutMs: 15000, env: cliEnv() }).catch(() => null)
+  const v = await run(VERSION_ARGS)
+  if (v === null || v.exitCode !== 0) {
+    legacyWhy = null
+    return (bashMode = 'legacy')
+  }
+  // A version that cannot be read is a development build: it is taken as new.
+  const found = parseVersion(v.stdout)
+  if (cliVersion === undefined) cliVersion = found
+  if (found !== null && isOlder(found, parseVersion(CARD_MIN_CLI_VERSION) as number[])) {
+    legacyWhy = 'old-cli'
+    return (bashMode = 'legacy')
+  }
+  bashVersion = found
+  const check = await run(['query', 'results', 'check', '--format', 'json'])
+  const problem = check === null ? 'results-store-unwritable' : check.exitCode !== 0 ? (isUnknownCommand(`${check.stderr ?? ''}${check.stdout}`) ? 'old-cli' : 'results-store-unwritable') : storeProblem(check.stdout)
+  if (problem !== null) {
+    legacyWhy = problem
+    return (bashMode = 'legacy')
+  }
+  return (bashMode = 'new')
+}
+
+const canOpenElsewhere = () => bashVersion === null || !isOlder(bashVersion, parseVersion(OPEN_MIN_CLI_VERSION) as number[])
+
+// Finds a result's files by asking the CLI (`query results locate`, never the model's command or
+// output), checks where they are and how large, reads them into the card's member, and keeps rows for
+// the last MAX_CARDS cards. Answers the metadata when it was read.
+async function loadCard($: Host, key: string, id: string): Promise<CardMeta | null> {
+  const card = memberOf(cards, { requestId: key })
+  const set = (status: CardState['status']) => update($, card, cur => ({ ...cur, id, status, meta: undefined, data: undefined }))
+  await update($, card, cur => ({ ...cur, id, status: 'loading' }))
+  const cwd = await $.session.cwd().catch(() => undefined)
+  const located = await $.process
+    .run(['datatug', 'query', 'results', 'locate', '--id', id, '--format', 'json'], { ...(cwd === undefined ? {} : { cwd }), timeoutMs: 15000, env: cliEnv() })
+    .catch(() => null)
+  if (located === null) {
+    await set('no-locator')
+    return null
+  }
+  const loc = readLocator(located.stdout, id)
+  if (!('files' in loc)) {
+    await set(loc.state as CardState['status'])
+    return null
+  }
+  const stat = (p: string) => $.fs.stat(p, { resolve: true }).catch(() => null)
+  const root = await stat(loc.files.root)
+  const realRoot = root?.kind === 'dir' ? root.realPath : undefined
+  const ms = await stat(loc.files.meta)
+  const ds = await stat(loc.files.data)
+  if (realRoot === undefined || !statLandsAt(ms, realRoot, `${realRoot}/${id}/meta.json`) || !statLandsAt(ds, realRoot, `${realRoot}/${id}/data.json`)) {
+    await set('unreadable')
+    return null
+  }
+  if ((ms as { size: number }).size > MAX_META_BYTES || (ds as { size: number }).size > MAX_DATA_BYTES) {
+    await set('too-large')
+    return null
+  }
+  const metaText = await $.fs.read(loc.files.meta).catch(() => null)
+  const m = metaText === null ? { state: 'unreadable' } : readMeta(metaText, id)
+  if (!('meta' in m)) {
+    await set(m.state as CardState['status'])
+    return null
+  }
+  if ((ds as { size: number }).size !== m.meta.dataBytes) {
+    await set('too-large')
+    return null
+  }
+  const dataText = await $.fs.read(loc.files.data).catch(() => null)
+  const data = dataText === null ? null : readData(dataText, id)
+  if (data === null) {
+    await set('unreadable')
+    return null
+  }
+  const canOpen = canOpenElsewhere()
+  await update($, card, cur => ({ ...cur, id, status: 'ready', view: 'table', row: 0, shown: 20, page: 0, meta: m.meta, data, canOpen, link: undefined }))
+  let dropped: string[] = []
+  await update($, cardRows, cur => {
+    const next = [...cur.filter(k => k !== key), key]
+    dropped = next.slice(0, Math.max(0, next.length - MAX_CARDS))
+    return next.slice(-MAX_CARDS)
+  })
+  for (const old of dropped) await update($, memberOf(cards, { requestId: old }), cur => (cur.status === 'ready' ? { ...cur, status: 'load', data: undefined, link: undefined } : cur))
+  return m.meta
+}
+
+// Whether a Bash row's command is one the mod gave result files: the plain form as the model wrote
+// it, or the rewritten one naming this result id.
+function isCardCommand(command: string, id: string): boolean {
+  const c = classify(command, false)
+  if (c.kind === 'plain') return c.format === null || c.format === 'json'
+  return new RegExp(`(?:^|\\s)query\\s+run\\s+--result-id\\s+${id}(?:\\s|$)`).test(command)
+}
+
+const NUMERIC = new Set(['integer', 'number', 'decimal'])
+const VIEW_KEYS: CardView[] = VIEWS as CardView[]
+
+// One result card under its `datatug query run` row: a header, the five-view switcher, the view,
+// and, when the CLI can open the result elsewhere, the web link and the terminal command. It reads
+// nothing but its own member and the column order; a press writes only its member.
+async function drawCard($: Host, e: { requestId: string; surface: string; props: { bodyColumns?: number } }, row: unknown, card: CardState) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { Box, Text, Button, Markdown, Link, Code } = $.ui.resolve(e as never) as any
+  const key = e.requestId
+  const fp = fingerprint(key)
+  const k = (...parts: (string | number)[]) => `qr:${fp}:${parts.join(':')}`
+  const set = (fn: (c: CardState) => CardState) => update($, memberOf(cards, { requestId: key }), fn)
+  const load = () => {
+    if (card.id !== '') void loadCard($, key, card.id)
+  }
+  if (card.status !== 'ready' || card.meta === undefined || card.data === undefined) {
+    const why = card.status === 'fallback' ? (LEGACY_TEXT[card.why as keyof typeof LEGACY_TEXT] ?? STATE_TEXT['no-locator']) : (STATE_TEXT[card.status as keyof typeof STATE_TEXT] ?? STATE_TEXT.load)
+    const canLoad = card.status === 'load' || card.status === 'incomplete' || card.status === 'no-locator' || (card.status === 'ready' && card.data === undefined)
+    return (
+      <Box flexDirection="column">
+        {row}
+        <Box flexDirection="row" gap={1} alignItems="center">
+          <Text dimColor>{card.status === 'ready' ? STATE_TEXT.load : why}</Text>
+          {canLoad && (
+            <Button key={k('load')} onPress={load}>
+              Load
+            </Button>
+          )}
+        </Box>
+      </Box>
+    )
+  }
+  const meta = card.meta
+  const data = card.data
+  const order = await read($, columnOrder)
+  const colMeta = (n: string) => meta.columns.find(c => c.name === n)
+  const pkKnown = meta.columns.some(c => c.pk !== null)
+  const names = data.columns.filter(n => !(pkKnown && n === '$key'))
+  const typeOf = (n: string) => colMeta(n)?.type ?? data.types[data.columns.indexOf(n)] ?? ''
+  const ordered = orderColumns(names, order, names, n => colMeta(n)?.declaredType ?? typeOf(n))
+  const at = (r: (string | null)[], n: string) => r[data.columns.indexOf(n)] ?? null
+  const total = data.rows.length
+  const dbRef0 = meta.db.ref
+  const noProject = <Text dimColor>Add this database to a project to open its tables</Text>
+  const cell0 = (w: number, child: unknown, right = false) => (
+    <Box width={w} flexShrink={0} justifyContent={right ? 'flex-end' : 'flex-start'} paddingRight={1}>
+      {child}
+    </Box>
+  )
+  const nameOf = (schema0: string, rel: string) => (schema0 === '' || schema0 === 'main' ? rel : `${schema0}.${rel}`)
+  // A name that opens a side-panel card when the database is in a project, else plain text.
+  const opener = (bkey: string, label: string, ref: string | null, onPress: (ref: string) => unknown) =>
+    ref === null ? <Text>{clean(label)}</Text> : (
+      <Button key={bkey} plain onPress={() => void onPress(ref)}>
+        {clean(label)}
+      </Button>
+    )
+  const instRef = (instance: string) => meta.participants.find(p => p.instance === instance)?.db ?? dbRef0
+  const unavailable = (reason: string | undefined) => (reason === undefined ? null : <Text dimColor>{UNAVAILABLE_TEXT[reason as keyof typeof UNAVAILABLE_TEXT] ?? 'Not known for this result'}</Text>)
+
+  let body: unknown
+  if (card.view === 'table') {
+    const cols = ordered.slice(0, MAX_COLS)
+    const start = card.page * 50
+    const shown = data.rows.slice(start, start + card.shown)
+    const head = `| # | ${cols.map(c => md(c)).join(' | ')} |`
+    const rule = `| ---: |${cols.map(c => (NUMERIC.has(typeOf(c)) ? ' ---: ' : ' --- ')).join('|')}|`
+    const href = (i: number) => `${BASE}qr/${fp}/row/${i}`
+    const lines = shown.map((r, i) => `| [${start + i + 1}](${href(start + i)}) | ${cols.map(c => md(at(r, c))).join(' | ')} |`)
+    const canMore = card.page === 0 && card.shown < 50 && total > card.shown
+    const text = [head, rule, ...lines].join('\n') + (canMore ? `\n\n[Show ${Math.min(30, total - card.shown)} more](${BASE}qr/${fp}/more)` : '')
+    body = (
+      <Box flexDirection="column">
+        {ordered.length > cols.length && <Text dimColor>{`First ${cols.length} of ${ordered.length} columns shown; the Record view shows them all.`}</Text>}
+        <Markdown
+          key={k('grid')}
+          text={text}
+          pressableLinks={[...(canMore ? [`${BASE}qr/${fp}/more`] : []), ...shown.map((_, i) => href(start + i))]}
+          onLinkPress={(link: { href: string }) => {
+            if (link.href === `${BASE}qr/${fp}/more`) return set(c => ({ ...c, shown: 50 }))
+            const index = Number(link.href.slice(`${BASE}qr/${fp}/row/`.length))
+            if (Number.isInteger(index) && index >= 0 && index < total) return set(c => ({ ...c, view: 'record', row: index }))
+          }}
+        />
+        {card.shown >= 50 && total > 50 && (
+          <Box flexDirection="row" gap={1}>
+            {card.page > 0 && (
+              <Button key={k('prev50')} onPress={() => set(c => ({ ...c, page: Math.max(0, c.page - 1) }))}>
+                ◀ Prev 50
+              </Button>
+            )}
+            {start + 50 < total && (
+              <Button key={k('next50')} onPress={() => set(c => ({ ...c, page: c.page + 1 }))}>
+                Next 50 ▶
+              </Button>
+            )}
+          </Box>
+        )}
+      </Box>
+    )
+  } else if (card.view === 'record') {
+    const index = Math.min(Math.max(0, card.row), Math.max(0, total - 1))
+    const r = data.rows[index] ?? []
+    const step = (by: number) => set(c => ({ ...c, row: Math.min(Math.max(0, c.row + by), Math.max(0, total - 1)) }))
+    const tw = Math.min(16, Math.max(6, ...ordered.map(n => typeOf(n).length)) + 2)
+    const nw = Math.min(32, Math.max(6, ...ordered.map(n => n.length)) + 2)
+    body = (
+      <Box flexDirection="column">
+        <Box flexDirection="row" gap={1} alignItems="center">
+          <Text dimColor>{`Row ${index + 1} of ${total}`}</Text>
+          <Button key={k('prev')} onPress={() => step(-1)}>
+            ◀ Prev
+          </Button>
+          <Button key={k('next')} onPress={() => step(1)}>
+            Next ▶
+          </Button>
+        </Box>
+        {ordered.map((n, i) => {
+          const c = colMeta(n)
+          const v = at(r, n)
+          const fk = c?.foreignKeys[0]
+          const ref = c?.source === null || c?.source === undefined ? dbRef0 : instRef(c.source.instance)
+          const shownValue = v === null ? '' : clean(v).slice(0, 800)
+          return (
+            <Box key={k('f', i)} flexDirection="row">
+              {cell0(tw, <Text dimColor>{clean(typeOf(n))}</Text>)}
+              {cell0(nw, <Text>{clean(n)}</Text>)}
+              <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                {fk !== undefined && ref !== null && v !== null && !fk.refRelation.startsWith('-') ? (
+                  <Button key={k('fk', i)} plain onPress={() => void openRefRecord($, ref, fk.refRelation, fk.refColumn, v)}>
+                    {shownValue}
+                  </Button>
+                ) : (
+                  <Text>{shownValue}</Text>
+                )}
+              </Box>
+            </Box>
+          )
+        })}
+      </Box>
+    )
+  } else if (card.view === 'columns') {
+    const w = { n: 4, name: Math.min(28, Math.max(6, ...ordered.map(n => n.length)) + 2), type: 10, decl: 14, nul: 9, key: 6 }
+    body = (
+      <Box flexDirection="column">
+        <Box flexDirection="row">
+          {cell0(w.n, <Text bold dimColor>#</Text>, true)}
+          {cell0(w.name, <Text bold dimColor>Name</Text>)}
+          {cell0(w.type, <Text bold dimColor>Type</Text>)}
+          {cell0(w.decl, <Text bold dimColor>Declared</Text>)}
+          {cell0(w.nul, <Text bold dimColor>Nullable</Text>)}
+          {cell0(w.key, <Text bold dimColor>Key</Text>)}
+          <Text bold dimColor>Source</Text>
+        </Box>
+        {ordered.map((n, i) => {
+          const c = colMeta(n)
+          const src = c?.source ?? null
+          const ref = src === null ? null : instRef(src.instance)
+          const pkParts = meta.columns.filter(x => x.pk !== null).length
+          return (
+            <Box key={k('c', i)} flexDirection="row">
+              {cell0(w.n, <Text dimColor>{String(i + 1)}</Text>, true)}
+              {cell0(w.name, src === null ? <Text>{clean(n)}</Text> : opener(k('cn', i), n, ref, rf => gotoPanel($, rf, { schema: src.schema, table: src.relation, column: src.column })))}
+              {cell0(w.type, <Text>{clean(typeOf(n))}</Text>)}
+              {cell0(w.decl, <Text dimColor={c?.declaredType == null}>{c?.declaredType == null ? '—' : clean(c.declaredType)}</Text>)}
+              {cell0(w.nul, <Text dimColor={c?.nullable == null}>{c?.nullable == null ? '—' : c.nullable ? 'yes' : 'no'}</Text>)}
+              {cell0(w.key, <Text>{c?.pk == null ? '' : pkParts > 1 ? `🔑 ${c.pk}` : '🔑'}</Text>)}
+              <Box flexDirection="row" gap={1} flexShrink={1} minWidth={0}>
+                {src === null ? (
+                  <Text dimColor>computed</Text>
+                ) : (
+                  opener(k('cs', i), `${src.relation}.${src.column}`, ref, rf => gotoPanel($, rf, { schema: src.schema, table: src.relation, showTable: true }))
+                )}
+                {(c?.foreignKeys ?? []).slice(0, 3).map((f, j) => (
+                  <Box key={k('cfk', i, j)} flexDirection="row" gap={1}>
+                    <Text dimColor>FK</Text>
+                    {opener(k('cf', i, j), f.refRelation, ref, rf => gotoPanel($, rf, { schema: f.refSchema, table: f.refRelation, showTable: true }))}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )
+        })}
+        {unavailable(meta.unavailable.declaredTypes ?? meta.unavailable.columns)}
+        {dbRef0 === null && noProject}
+      </Box>
+    )
+  } else if (card.view === 'sources') {
+    const w = { n: 4, rel: Math.min(32, Math.max(8, ...meta.participants.map(p => nameOf(p.schema, p.relation).length)) + 2), kind: 9, alias: Math.min(16, Math.max(7, ...meta.participants.map(p => p.alias.length)) + 2), role: 7 }
+    body = (
+      <Box flexDirection="column">
+        {meta.participants.length > 0 && (
+          <Box flexDirection="row">
+            {cell0(w.n, <Text bold dimColor>#</Text>, true)}
+            {cell0(w.rel, <Text bold dimColor>Source</Text>)}
+            {cell0(w.kind, <Text bold dimColor>Kind</Text>)}
+            {cell0(w.alias, <Text bold dimColor>Alias</Text>)}
+            {cell0(w.role, <Text bold dimColor>Role</Text>)}
+          </Box>
+        )}
+        {meta.participants.map((p, i) => {
+          const ref = p.db ?? dbRef0
+          return (
+            <Box key={k('s', i)} flexDirection="row">
+              {cell0(w.n, <Text dimColor>{String(i + 1)}</Text>, true)}
+              {cell0(w.rel, opener(k('st', i), nameOf(p.schema, p.relation), ref, rf => gotoPanel($, rf, { schema: p.schema, table: p.relation, showTable: true })))}
+              {cell0(w.kind, <Text dimColor>{clean(p.kind)}</Text>)}
+              {cell0(w.alias, <Text>{clean(p.alias)}</Text>)}
+              {cell0(w.role, <Text dimColor>{clean(p.role)}</Text>)}
+              <Box flexDirection="row" gap={1} flexShrink={1} minWidth={0}>
+                {p.on.length > 0 && <Text dimColor>{clean(p.on.map(o => `${o.left} = ${o.right}`).join(', '))}</Text>}
+                {ref !== null && !p.relation.startsWith('-') && (
+                  <Button key={k('sr', i)} plain onPress={() => void openRefRecords($, ref, p.relation)}>
+                    Records
+                  </Button>
+                )}
+              </Box>
+            </Box>
+          )
+        })}
+        {unavailable(meta.unavailable.participants)}
+        {meta.participants.length === 0 && meta.unavailable.participants === undefined && <Text dimColor>No sources reported for this result</Text>}
+        {dbRef0 === null && meta.participants.length > 0 && noProject}
+      </Box>
+    )
+  } else {
+    const w = { n: 4, rel: Math.min(32, Math.max(8, ...meta.related.map(r => nameOf(r.schema, r.relation).length)) + 2), kind: 9, dir: 17, card: 13 }
+    const fromName = (inst: string) => meta.participants.find(p => p.instance === inst)?.relation ?? ''
+    body = (
+      <Box flexDirection="column">
+        {meta.related.length > 0 && (
+          <Box flexDirection="row">
+            {cell0(w.n, <Text bold dimColor>#</Text>, true)}
+            {cell0(w.rel, <Text bold dimColor>Table</Text>)}
+            {cell0(w.kind, <Text bold dimColor>Kind</Text>)}
+            {cell0(w.dir, <Text bold dimColor>Direction</Text>)}
+            {cell0(w.card, <Text bold dimColor>Cardinality</Text>)}
+          </Box>
+        )}
+        {meta.related.map((r, i) => {
+          const ref = instRef(r.fromInstance)
+          const from = fromName(r.fromInstance)
+          return (
+            <Box key={k('r', i)} flexDirection="row">
+              {cell0(w.n, <Text dimColor>{String(i + 1)}</Text>, true)}
+              {cell0(w.rel, opener(k('rt', i), nameOf(r.schema, r.relation), ref, rf => gotoPanel($, rf, { schema: r.schema, table: r.relation, showTable: true })))}
+              {cell0(w.kind, <Text dimColor>{clean(r.kind)}</Text>)}
+              {cell0(w.dir, <Text dimColor>{r.direction === 'incoming' ? '← referenced by' : '→ references'}</Text>)}
+              {cell0(w.card, <Text dimColor>{clean(r.cardinality)}</Text>)}
+              <Box flexDirection="row" gap={1} flexShrink={1} minWidth={0}>
+                <Text dimColor>{clean(r.fields.map(f => `${from === '' ? '' : `${from}.`}${f.source} = ${r.relation}.${f.target}`).join(', '))}</Text>
+                {ref !== null && !r.relation.startsWith('-') && (
+                  <Button key={k('rr', i)} plain onPress={() => void openRefRecords($, ref, r.relation)}>
+                    Records
+                  </Button>
+                )}
+              </Box>
+            </Box>
+          )
+        })}
+        {unavailable(meta.unavailable.related)}
+        {meta.related.length === 0 && meta.unavailable.related === undefined && <Text dimColor>No related tables found</Text>}
+        {dbRef0 === null && meta.related.length > 0 && noProject}
+      </Box>
+    )
+  }
+
+  // The web link and the terminal command: only from a CLI that opens a result elsewhere.
+  let open: unknown = null
+  const command = uiCommand(card.id)
+  if (card.canOpen === true && command !== null) {
+    const isHere = isSameHost(e.surface, await overSsh($))
+    let linkBody: unknown
+    if (!isHere) linkBody = <Text dimColor>{MESSAGES['same-host']}</Text>
+    else {
+      const args = resultUrlArgs(card.id, card.view, card.view === 'record' ? card.row + 1 : undefined)
+      const want = args === null ? null : fingerprint(JSON.stringify(args))
+      const st = card.link
+      const t = await nowMs($)
+      const fresh = st !== undefined && st.req === want && st.status !== 'checking' && st.isStale !== true && t - st.at < LINK_TTL_MS
+      const held = hrefs.get(`qr:${key}`)
+      if (want !== null && (!fresh || (st.status === 'ok' && held?.req !== want))) void fetchCardLink($, key, st !== undefined && st.status === 'ok' && held?.req !== want)
+      linkBody =
+        fresh && st.status === 'ok' && held?.req === want ? (
+          <Link key={k('link')} href={held.href} label="Open in DataTug ↗" />
+        ) : held !== undefined && st?.status === 'checking' ? (
+          <Text dimColor>Open in DataTug ↗ (updating…)</Text>
+        ) : (
+          <Text dimColor>{MESSAGES[fresh && st.status !== 'ok' ? st.status : 'checking']}</Text>
+        )
+    }
+    const copy = async () => {
+      const done = await ($.ui as unknown as { copy: (a: { text: string; surface: string }) => Promise<{ isCopied: boolean }> }).copy({ text: command, surface: e.surface }).catch(() => ({ isCopied: false }))
+      if (!done.isCopied) void $.ui.toast('Select the command to copy it')
+    }
+    open = (
+      <Box flexDirection="column">
+        <Box flexDirection="row" gap={1} alignItems="center">
+          {linkBody}
+          {isHere && (
+            <Button key={k('check')} plain onPress={() => void fetchCardLink($, key, true)}>
+              Check again
+            </Button>
+          )}
+        </Box>
+        <Box flexDirection="row" gap={1} alignItems="center">
+          <Text dimColor>Open these records in the DataTug terminal UI:</Text>
+          <Button key={k('copy')} plain onPress={() => void copy()}>
+            Copy
+          </Button>
+        </Box>
+        <Code key={k('cmd')} source={command} language="sh" />
+      </Box>
+    )
+  }
+
+  const kept = meta.rows.kept
+  return (
+    <Box flexDirection="column">
+      {row}
+      <Text dimColor>
+        {`${kept} row${kept === 1 ? '' : 's'}${meta.rows.hasMore ? ` (at least ${kept + 1})` : ''} x ${names.length} column${names.length === 1 ? '' : 's'} (shown to you, not to Claude)`}
+      </Text>
+      <Box flexDirection="row" gap={1}>
+        {VIEW_KEYS.map(v => (
+          <Button key={k('view', v)} plain onPress={() => set(c => ({ ...c, view: v }))}>
+            {`${card.view === v ? '●' : '○'} ${VIEW_LABELS[v]}`}
+          </Button>
+        ))}
+      </Box>
+      {body}
+      {open}
+    </Box>
+  )
 }
 
 export const register: Register = (on, options) => {
@@ -1045,7 +1603,35 @@ export const register: Register = (on, options) => {
     const c = classify(command0, (e as { run_in_background?: unknown }).run_in_background === true)
     if (c.kind === 'none' || c.kind === 'help') return next(e)
     if (c.kind === 'deny') return { deny: c.reason }
-    // The plain form: the rows go to a file of the mod's, never through Bash's output.
+    // A CLI new enough writes the result to its own private files: `--result-id` (and `--format json`
+    // when the model gave none) goes right after `query run`, with no redirect or other shell syntax.
+    const explicitFormat = c.format !== null && c.format !== 'json'
+    if (!explicitFormat && (await sessionMode($ as Host)) === 'new') {
+      const id = resultId(e.tool_use_id)
+      if (id === null) throw new ModError('no result id')
+      const key = e.tool_use_id
+      const ran = await next({ ...e, command: `${c.head} --result-id ${id}${c.format === null ? ' --format json' : ''}${c.tail}` })
+      if (ran.deny !== undefined) return ran
+      const out = (ran.result ?? {}) as object
+      if (typeof (ran.result as { backgroundTaskId?: unknown } | undefined)?.backgroundTaskId === 'string') {
+        await update($, memberOf(cards, { requestId: key }), () => ({ ...NO_CARD, id, status: 'load' }))
+        return { result: { ...out, stdout: TEXT.background } } as typeof ran
+      }
+      if (ran.isError === true) {
+        // Only two error lines are read: an older CLI's unknown flag, and the store failure line of a
+        // sandboxed shell. Either turns the session back to the private capture.
+        const fb = fallbackOf(`${ran.text ?? ''}\n${String((ran.result as { stderr?: unknown } | undefined)?.stderr ?? '')}\n${String((ran.result as { stdout?: unknown } | undefined)?.stdout ?? '')}`)
+        if (fb === null) return ran
+        bashMode = 'legacy'
+        legacyWhy = fb
+        await update($, memberOf(cards, { requestId: key }), () => ({ ...NO_CARD, id, status: 'fallback', why: fb }))
+        return { deny: fb === 'old-cli' ? TEXT.oldCli : TEXT.rerun }
+      }
+      // Never the tool's stdout for paths: the mod asks the CLI where the files are.
+      const meta = await loadCard($ as Host, key, id)
+      return { result: { ...out, stdout: meta === null ? TEXT.ran : resultSummary(meta) } } as typeof ran
+    }
+    // The plain form, private capture: the rows go to a file of the mod's, never through Bash's output.
     const dir = await rowsDir($ as Host)
     const file = `${dir}/${e.tool_use_id.replace(/[^A-Za-z0-9_-]/g, '_')}.json`
     const run = c.format === null ? `${c.head} --format json${c.tail}` : `${c.head}${c.tail}`
@@ -1074,8 +1660,9 @@ export const register: Register = (on, options) => {
     if (isBackground) return { result: { ...out, stdout: 'The DataTug query went to the background, so its rows were not captured. Run it in the foreground to see them in a card.' } } as typeof ran
     if (ran.isError === true || stdout === null) return ran
     if (c.format !== null && c.format !== 'json') return { result: { ...out, stdout: 'The output was captured privately; leave out --format to see the result in a card.' } } as typeof ran
-    const parsed = parseRows(stdout, e.tool_use_id, e.command)
-    if (parsed === null) return ran
+    const parsed0 = parseRows(stdout, e.tool_use_id, e.command)
+    if (parsed0 === null) return ran
+    const parsed: GridResult = legacyWhy !== null && LEGACY_TEXT[legacyWhy as keyof typeof LEGACY_TEXT] !== undefined ? { ...parsed0, note: LEGACY_TEXT[legacyWhy as keyof typeof LEGACY_TEXT] } : parsed0
     await update($, results, all => {
       const keep = Object.entries(all).slice(-9)
       return { ...Object.fromEntries(keep), [parsed.id]: parsed }
@@ -1090,9 +1677,19 @@ export const register: Register = (on, options) => {
   // column links each row; pressing a link opens that record's card in the pane.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     if (e.props.tool !== 'Bash') return next(e)
+    // A result card reads its own member and the column order only: a press, a side-panel action or a
+    // schema load redraws no other card.
+    const card = await read($, memberOf(cards, { requestId: e.requestId }))
+    if (card.status !== 'none') return drawCard($ as Host, e, await next(e), card)
     const all = await read($, results)
     const result = all[e.requestId]
-    if (result === undefined) return next(e)
+    if (result === undefined) {
+      // A row whose call ran with result files, after the state lost it (a reload, a resumed session).
+      const input = (e.props.input ?? {}) as { command?: unknown }
+      const id = resultId(e.requestId)
+      if (e.props.isRunning || id === null || !isCardCommand(String(input.command ?? ''), id)) return next(e)
+      return drawCard($ as Host, e, await next(e), { ...NO_CARD, id, status: 'load' })
+    }
     const limits = await read($, shownRows)
     const row = await next(e)
     const { Box, Text, Markdown } = $.ui.resolve(e)
@@ -1121,6 +1718,7 @@ export const register: Register = (on, options) => {
           {result.total} rows x {visible.length} columns (shown to you, not to Claude)
           {visible.length > cols.length ? `; first ${cols.length} columns shown` : ''}. Press a row number to open its card.
         </Text>
+        {result.note !== undefined && <Text dimColor>{result.note}</Text>}
         <Markdown
           key="grid"
           text={text}
@@ -1750,14 +2348,16 @@ export const register: Register = (on, options) => {
           </Box>
         )
       }
-      const recordsBlock = dbLinkBlock()
+      // Records a result card opened link through the reference they were read with.
+      const recordsRef = dr.ref ?? od.ref ?? ''
+      const recordsBlock = dr.ref !== undefined ? (isHere ? null : MESSAGES['same-host']) : dbLinkBlock()
       const recordsLink =
         dr.status === 'ready' && recResult !== undefined
           ? linkRow(
               'records',
               recordsBlock,
               recordsBlock === null
-                ? { kind: 'records', db: od.ref ?? '', table: dr.name, schema: linkSchema(dr.name), isView: od.items.find(i => i.name === dr.name)?.kind === 'view', limit: TOP }
+                ? { kind: 'records', db: recordsRef, table: dr.name, schema: dr.ref !== undefined ? undefined : linkSchema(dr.name), isView: od.items.find(i => i.name === dr.name)?.kind === 'view', limit: TOP }
                 : null,
             )
           : null
@@ -1868,7 +2468,7 @@ export const register: Register = (on, options) => {
     // Where the detail card points: a table (null = the result's own), a column and/or the table itself.
     const goto = (target: { table?: string | null; column?: string | null; showTable?: boolean }) => {
       void update($, dbTable, () => ({ name: null, status: 'idle', message: '', result: null }))
-      void update($, view, cur => ({ ...cur, tableName: target.table ?? null, column: target.column ?? null, showTable: target.showTable === true }))
+      void update($, view, cur => ({ ...cur, tableName: target.table ?? null, tableRef: null, column: target.column ?? null, showTable: target.showTable === true }))
       reveal()
     }
     const showColumn = (name: string | null) => {
@@ -2029,7 +2629,9 @@ export const register: Register = (on, options) => {
     let detailCard = null
     const base = result === undefined ? undefined : findTable(sch.tables, result.collection)
     const tName = v.tableName ?? result?.collection ?? ''
-    const table = v.tableName == null ? base : findTable(sch.tables, v.tableName, base)
+    // A table a result card opened is found by its full identity, never by its name alone.
+    const byRef = v.tableRef != null && v.tableName != null && same(v.tableRef.name, v.tableName) ? v.tableRef : null
+    const table = v.tableName == null ? base : byRef !== null ? findRef(sch.tables, byRef) : findTable(sch.tables, v.tableName, base)
     const own = result !== undefined && same(tName, result.collection) ? result : undefined
     const schemaNote =
       sch.projectId !== chosen || sch.status === 'idle'

@@ -135,6 +135,7 @@ async function runQuery($: any, on: any, tmp: string | null) {
   on('env.get', () => ({ value: tmp ?? undefined }))
   on('fs.read', () => ({ value: '[{"name":"SECRET-ALICE"}]' }))
   on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    if (e.argv[1] === '--version') return { value: { exitCode: 0, stdout: '0.84.1\n', stderr: '' } }
     writes.push([e.argv[0], e.argv.slice(1).join(' ')])
     return { value: { exitCode: 0, stdout: '', stderr: '' } }
   })
@@ -248,6 +249,7 @@ test('the rows file is removed when the command failed, and the folder is checke
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
   on('fs.read', () => ({ value: '[{"name":"SECRET"}]' }) as never)
   on('process.run', (_$: unknown, e: { argv: string[] }) => {
+    if (e.argv[1] === '--version') return { value: { exitCode: 0, stdout: '0.84.1\n', stderr: '' } } as never
     writes.push(e.argv.join(' '))
     return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
   })
