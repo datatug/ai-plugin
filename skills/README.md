@@ -50,7 +50,7 @@ Every CLI-wrapper skill must verify that `datatug` is installed before invoking 
 >
 > > The `datatug` CLI is not installed. Either:
 > > - invoke `/datatug:datatug-install` to see install options, or
-> > - install per <https://github.com/datatug/datatug-cli#installation>.
+> > - install per <https://datatug.io/en/docs/install>.
 > >
 > > Then retry your command.
 >

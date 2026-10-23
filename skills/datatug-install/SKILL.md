@@ -5,7 +5,7 @@ description: "Show install instructions for the datatug CLI. Use when `datatug` 
 
 # Install the datatug CLI
 
-This skill **shows the user how to install** the [`datatug`](https://github.com/datatug/datatug-cli) CLI — the runtime prerequisite for every other skill in this plugin. It does not execute the installer.
+This skill **shows the user how to install** the [`datatug`](https://datatug.io/en/docs/install) CLI — the runtime prerequisite for every other skill in this plugin. It does not execute the installer.
 
 ## When to use
 
@@ -26,15 +26,9 @@ brew tap datatug/tap
 brew install --cask datatug
 ```
 
-### Go (any platform)
-
-```bash
-go install github.com/datatug/datatug-cli@latest
-```
-
 ### Binary download (any platform)
 
-Download the matching archive from the [GitHub Releases](https://github.com/datatug/datatug-cli/releases) page.
+Download the matching archive from the [GitHub Releases](https://github.com/datatug/datatug/releases) page.
 
 ## Verification
 

@@ -1,6 +1,6 @@
 # datatug-install Skill
 
-Install / reinstall / update the [`datatug`](https://github.com/datatug/datatug-cli) CLI. Implementation lives in [`SKILL.md`](SKILL.md), whose `user-invocable` metadata provides the `/datatug:datatug-install` slash command. Design rationale and explicit non-goals live in [`docs/ideas/cli-install-skill.md`](../../docs/ideas/cli-install-skill.md).
+Install / reinstall / update the [`datatug`](https://datatug.io/en/docs/install) CLI. Implementation lives in [`SKILL.md`](SKILL.md), whose `user-invocable` metadata provides the `/datatug:datatug-install` slash command. Design rationale and explicit non-goals live in [`docs/ideas/cli-install-skill.md`](../../docs/ideas/cli-install-skill.md).
 
 ## Sister skills
 
