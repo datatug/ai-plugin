@@ -185,6 +185,34 @@ test('sortedOrder is stable and does not change the rows; nextSort cycles', () =
   expect(nextSort({ col: 'a', desc: true }, 'b')).toEqual({ col: 'b', desc: false })
 })
 
+test('numeric sorting preserves exact decimal digits, mixed integers and stable equivalents', () => {
+  const cases = [
+    ['9007199254740992.2', '9007199254740992.1'],
+    ['9007199254740993', '9007199254740992.9'],
+    ['-9007199254740992.1', '-9007199254740992.2'],
+    ['0.00000000000000000002', '0.00000000000000000001'],
+    ['1.001', '1.0009'],
+    ['2e999999999999999999999', '1e999999999999999999999'],
+    ['2e-999999999999999999999', '1e-999999999999999999999'],
+    ['Infinity', '1e9999'],
+    ['-1e9999', '-Infinity'],
+  ]
+  for (const values of cases) {
+    const rows = values.map(v => [v])
+    expect(sortedOrder(rows, 0, true, false)).toEqual([1, 0])
+    expect(sortedOrder(rows, 0, true, true)).toEqual([0, 1])
+    expect(rows.map(r => r[0])).toEqual(values)
+  }
+  for (const values of [['1', '1.0', '10e-1', '+01.00'], ['0', '-0.0', '0e999999999999999999999']]) {
+    const rows = values.map(v => [v])
+    expect(sortedOrder(rows, 0, true, false)).toEqual(values.map((_, i) => i))
+    expect(sortedOrder(rows, 0, true, true)).toEqual(values.map((_, i) => i))
+  }
+  const rows = [['z'], [null], ['0x10'], ['15.999999999999999999'], [''], [undefined], ['A']]
+  expect(sortedOrder(rows, 0, true, false)).toEqual([3, 2, 4, 6, 0, 1, 5])
+  expect(sortedOrder(rows, 0, true, true)).toEqual([0, 6, 4, 2, 3, 1, 5])
+})
+
 test('CSV quotes commas, quotes and line breaks; JSON keeps numbers exact and is keyed by column', () => {
   const rows = [['a,b', 'say "hi"', 'x\ny', null, '9007199254740993'], ['plain', '', '=SUM(A1)', 'r\r', '1.50']]
   expect(toCsv(['c1', 'c "2"', 'c3', 'c4', 'n'], rows)).toBe('c1,"c ""2""",c3,c4,n\n"a,b","say ""hi""","x\ny",,9007199254740993\nplain,,=SUM(A1),"r\r",1.50\n')
