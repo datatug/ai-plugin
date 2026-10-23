@@ -15,7 +15,7 @@ status: Approved
 
 ## Summary
 
-The agent **skill** that teaches an AI-agent terminal to build and progressively refine a DataTug query by driving the serve-brokered query builder's MCP tools. It is the agent-side surface of the Serve-Brokered AI Query Builder Capability (`specscore:feature/serve-brokered-query-builder@github.com/datatug/datatug`): the skill ensures a `datatug serve` daemon is reachable, creates a tab (by default in **DTQL mode**, where the query is a dalgo AST whose textual form is 1:1 DTQL-YAML) and hands the user a deep link to open the Web UI, and on each natural-language request constructs the prose + structured delta + full query and calls `apply_change` — staying quiet in the terminal by default and offering candidate options when unsure. When the AST cannot express the user's query (or the user wants raw native), the skill uses **native mode** — sending the connection's native query text verbatim — and may convert a DTQL tab to native one-way via `convert_to_native`. This Feature specifies what the skill must instruct; the skill file (`skills/datatug-query-builder/SKILL.md`) is its implementation.
+The agent **skill** that teaches an AI-agent terminal to build and progressively refine a DataTug query by driving the serve-brokered query builder's MCP tools. It is the agent-side surface of the Serve-Brokered AI Query Builder Capability (`specscore:feature/serve-brokered-query-builder@github.com/datatug/datatug`): the skill ensures a `datatug serve` daemon is reachable, creates a tab (by default in **TugQL mode**, where the query is a dalgo AST whose textual form is 1:1 TugQL-YAML) and hands the user a deep link to open the Web UI, and on each natural-language request constructs the prose + structured delta + full query and calls `apply_change` — staying quiet in the terminal by default and offering candidate options when unsure. When the AST cannot express the user's query (or the user wants raw native), the skill uses **native mode** — sending the connection's native query text verbatim — and may convert a TugQL tab to native one-way via `convert_to_native`. This Feature specifies what the skill must instruct; the skill file (`skills/datatug-query-builder/SKILL.md`) is its implementation.
 
 ## Problem
 
@@ -37,21 +37,21 @@ The skill MUST include a pre-flight that verifies `datatug` is installed and a `
 
 #### REQ: create-tab-and-share-link
 
-When the user starts building a query, the skill MUST have the agent call `create_tab` (selecting the target connection and, by default, DTQL mode) and present the returned deep link to the user so they can open the Web UI for that tab.
+When the user starts building a query, the skill MUST have the agent call `create_tab` (selecting the target connection and, by default, TugQL mode) and present the returned deep link to the user so they can open the Web UI for that tab.
 
 ### Refinement loop
 
 #### REQ: choose-mode
 
-The skill MUST instruct the agent to prefer DTQL mode (the dalgo AST) so the user can edit point-and-click in the Web UI, and to use native mode only when the query cannot be expressed in the AST or the user explicitly wants native text. To move an existing DTQL tab to native, the agent MUST use `convert_to_native` (a one-way transition); the skill MUST NOT attempt to convert a native tab back to DTQL.
+The skill MUST instruct the agent to prefer TugQL mode (the dalgo AST) so the user can edit point-and-click in the Web UI, and to use native mode only when the query cannot be expressed in the AST or the user explicitly wants native text. To move an existing TugQL tab to native, the agent MUST use `convert_to_native` (a one-way transition); the skill MUST NOT attempt to convert a native tab back to TugQL.
 
 #### REQ: apply-change-triple
 
-For each natural-language request against an existing tab, the skill MUST have the agent build the full resulting query in the tab's mode and call `apply_change` with the explicit tab id: in DTQL mode carrying the prose, the structured delta, and the full dalgo AST (as DTQL-YAML); in native mode carrying the prose and the full native query text (no delta). The agent MUST NOT rely on the daemon to interpret prose.
+For each natural-language request against an existing tab, the skill MUST have the agent build the full resulting query in the tab's mode and call `apply_change` with the explicit tab id: in TugQL mode carrying the prose, the structured delta, and the full dalgo AST (as TugQL-YAML); in native mode carrying the prose and the full native query text (no delta). The agent MUST NOT rely on the daemon to interpret prose.
 
 #### REQ: terminal-quiet
 
-By default the skill MUST keep the agent from echoing the query in the terminal; it sends each change to the daemon and points the user to the Web UI. The agent MUST show the query only when the user asks — in DTQL mode as DTQL-YAML (the dalgo form) or the rendered native query, in native mode as the native text — either once or on every change.
+By default the skill MUST keep the agent from echoing the query in the terminal; it sends each change to the daemon and points the user to the Web UI. The agent MUST show the query only when the user asks — in TugQL mode as TugQL-YAML (the dalgo form) or the rendered native query, in native mode as the native text — either once or on every change.
 
 #### REQ: reconcile-web-edits
 
@@ -101,19 +101,19 @@ The skill MUST instruct the agent to produce only read-only queries in both mode
 
 **Given** a request the dalgo AST can express vs. one it cannot
 **When** the agent builds the query
-**Then** it stays in DTQL mode for the expressible request, and for the inexpressible one (or on explicit user request) it uses native mode — converting an existing DTQL tab via `convert_to_native` — and never attempts to convert a native tab back to DTQL.
+**Then** it stays in TugQL mode for the expressible request, and for the inexpressible one (or on explicit user request) it uses native mode — converting an existing TugQL tab via `convert_to_native` — and never attempts to convert a native tab back to TugQL.
 
 ### AC: applies-change-as-triple (verifies REQ:apply-change-triple)
 
-**Given** a `dtql`-mode tab with a current query
+**Given** a `tugql`-mode tab with a current query
 **When** the user requests a refinement
-**Then** the agent calls `apply_change` with the tab id, supplying the prose, the structured delta, and the full dalgo AST (DTQL-YAML) — not relying on the daemon to interpret prose; and for a `native`-mode tab it supplies the prose and full native text (no delta).
+**Then** the agent calls `apply_change` with the tab id, supplying the prose, the structured delta, and the full dalgo AST (TugQL-YAML) — not relying on the daemon to interpret prose; and for a `native`-mode tab it supplies the prose and full native text (no delta).
 
 ### AC: stays-quiet-then-shows (verifies REQ:terminal-quiet)
 
 **Given** an active build session
 **When** the user has not asked to see the query
-**Then** the agent does not print the query in the terminal; and when the user asks, it prints the DTQL-YAML / rendered-native form (DTQL mode) or the native text (native mode).
+**Then** the agent does not print the query in the terminal; and when the user asks, it prints the TugQL-YAML / rendered-native form (TugQL mode) or the native text (native mode).
 
 ### AC: rereads-before-next-change (verifies REQ:reconcile-web-edits)
 
@@ -144,13 +144,13 @@ Each AC is an observable agent behavior (which tools are called, with what paylo
 - Choice of LLM provider/model — the skill is provider-neutral; it instructs whatever agent runs it.
 - Metadata/project authoring by conversation — a separate concern (see the `conversational-metadata-authoring` idea); this skill builds queries only.
 - The exact MCP tool argument schemas — owned by the daemon Feature; this skill consumes them.
-- `native`→`dtql` conversion — not offered; DTQL→native is one-way, and the agent never parses native text back into the AST.
+- `native`→`tugql` conversion — not offered; TugQL→native is one-way, and the agent never parses native text back into the AST.
 
 ## Open Questions
 
 - Should the skill be `user-invocable` (a `/datatug:query-builder` command) in addition to being model-invoked, and under what name?
 - Should the skill auto-start `datatug serve` (with the builder) when it is not running, or only instruct the user to start it?
-- How should the agent detect that the dalgo AST cannot express a request (REQ:choose-mode) — attempt DTQL and fall back to native on failure, or consult a daemon capability response — so the DTQL→native decision is consistent rather than a pure guess?
+- How should the agent detect that the dalgo AST cannot express a request (REQ:choose-mode) — attempt TugQL and fall back to native on failure, or consult a daemon capability response — so the TugQL→native decision is consistent rather than a pure guess?
 
 ---
 *This document follows the https://specscore.md/feature-specification*

@@ -65,7 +65,7 @@ test('the gate: only a table read without policies, from the first row, of a pla
   expect(moreGate(meta(FROM), 'm1')).toEqual({ ok: true, table: 'Album', dbRef: REF })
   const no = (m: unknown, reason: string, id = 'm1') => expect(moreGate(m, id)).toEqual({ ok: false, reason })
   no(meta({ ...FROM }, 'saved'), 'saved')
-  no(meta({ ...FROM }, 'dtql'), 'kind')
+  no(meta({ ...FROM }, 'tugql'), 'kind')
   no(meta({ ...FROM }, ''), 'kind')
   for (const policy of ['discovered', 'dir', 'explicit', 'project']) no(meta({ ...FROM, policy }), 'policy')
   for (const dbRef of [null, '', 'sqlite:///tmp/x.db', 'datatug:///chinook', 'datatug://demo/chinook?env=local&x=1', 'datatug://demo/chinook?env=a b', 'datatug://us%40er/db', 'https://evil.example/']) no(meta({ ...FROM, dbRef }), 'ref')
@@ -323,11 +323,11 @@ const hidden = async ($: any, on: any, id: string, query: Record<string, unknown
   expect(kind).toBeUndefined()
 }
 
-test('a saved query, a DTQL query, other policies, a database in no project, an offset and a hostile table have no buttons, only the named line', async ($, on) => {
+test('a saved query, a TugQL query, other policies, a database in no project, an offset and a hostile table have no buttons, only the named line', async ($, on) => {
   await hidden($, on, 's1', { kind: 'saved', savedQueryId: 'customers/customer-invoices', policy: 'project', text: 'from: {name: Customer}' }, 'saved')
 })
-test('a DTQL query has no buttons', async ($, on) => {
-  await hidden($, on, 's2', { kind: 'dtql', dtql: 'from: Invoice', policy: 'none', text: 'from: Invoice' }, 'kind')
+test('a TugQL query has no buttons', async ($, on) => {
+  await hidden($, on, 's2', { kind: 'tugql', tugql: 'from: Invoice', policy: 'none', text: 'from: Invoice' }, 'kind')
 })
 test('a table read under a policy has no buttons: a replay with --no-policies would widen access', async ($, on) => {
   await hidden($, on, 's3', { ...FROM, policy: 'discovered' }, 'policy')
