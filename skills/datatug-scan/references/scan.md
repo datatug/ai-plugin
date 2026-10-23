@@ -45,5 +45,5 @@ There is **no `--source` flag** — the source is specified by the connection fl
 
 - Run `datatug scan --help` for the authoritative flag list.
 - Writes the schema — tables, columns, types, primary keys, **foreign keys, indexes, unique constraints, and reverse references** — to `dbmodels/<id>.dbmodel.json` plus the project/environment files. Commit the diff to version-control the schema snapshot.
-- **SQLite** is supported via `-D sqlite3 --path <file>` (scan, persistence, and indexes, foreign keys and constraints are all covered). SQLite requires a CGO build of the CLI, so a prebuilt `CGO_ENABLED=0` release binary may not include it; if `datatug scan` reports that SQLite is unavailable, see the [install docs](https://datatug.io/en/docs/install) for a build that does.
+- **SQLite** is supported via `-D sqlite3 --path <file>` (scan, persistence, and indexes, foreign keys and constraints are all covered).
 - Deriving a SQL Server host from the project's environment config (omitting `-s/--server`) is not yet implemented and returns a clear error.
