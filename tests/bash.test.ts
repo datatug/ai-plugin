@@ -83,24 +83,24 @@ test('every other form of datatug query run is denied with a reason the model ca
     'datatug query run -f q --result-i[d] 1',
     'datatug query run -f q --result-?d 1',
     'datatug query run -f q --cl*nt x',
-    '/usr/bin/env datatug query run -f q.dtql',
-    '/usr/bin/time datatug query run -f q.dtql',
-    '/usr/bin/nice datatug query run -f q.dtql',
-    'noglob datatug query run -f q.dtql',
-    'nocorrect datatug query run -f q.dtql',
-    '- datatug query run -f q.dtql',
-    'repeat 1 datatug query run -f q.dtql',
-    'arch -arm64 datatug query run -f q.dtql',
-    'gtimeout 60 datatug query run -f q.dtql',
-    'coproc datatug query run -f q.dtql',
-    'ltrace datatug query run -f q.dtql',
-    'sandbox-exec -n no-network datatug query run -f q.dtql',
-    'some-unknown-wrapper --opt datatug query run -f q.dtql',
-    'datatug query run -f q.dtql "--client" claude-mod',
-    "datatug query run -f q.dtql '--result-id' x",
-    "datatug query run -f q.dtql '--'",
-    'DATATUG_CLIENT=claude-mod datatug query run -f q.dtql',
-    'env DATATUG_CLIENT=claude-mod datatug query run -f q.dtql',
+    '/usr/bin/env datatug query run -f q.query.tugql',
+    '/usr/bin/time datatug query run -f q.query.tugql',
+    '/usr/bin/nice datatug query run -f q.query.tugql',
+    'noglob datatug query run -f q.query.tugql',
+    'nocorrect datatug query run -f q.query.tugql',
+    '- datatug query run -f q.query.tugql',
+    'repeat 1 datatug query run -f q.query.tugql',
+    'arch -arm64 datatug query run -f q.query.tugql',
+    'gtimeout 60 datatug query run -f q.query.tugql',
+    'coproc datatug query run -f q.query.tugql',
+    'ltrace datatug query run -f q.query.tugql',
+    'sandbox-exec -n no-network datatug query run -f q.query.tugql',
+    'some-unknown-wrapper --opt datatug query run -f q.query.tugql',
+    'datatug query run -f q.query.tugql "--client" claude-mod',
+    "datatug query run -f q.query.tugql '--result-id' x",
+    "datatug query run -f q.query.tugql '--'",
+    'DATATUG_CLIENT=claude-mod datatug query run -f q.query.tugql',
+    'env DATATUG_CLIENT=claude-mod datatug query run -f q.query.tugql',
     'datatug query $"run" --db x --from c',
   ]
   for (const cmd of denied) {
@@ -112,7 +112,7 @@ test('every other form of datatug query run is denied with a reason the model ca
   // zsh runs `=datatug` as the datatug on the PATH: it is the plain form, and rewritten.
   expect(classify('=datatug query run --db x --from c', false).kind).toBe('plain')
   // macOS runs DataTug as datatug: it is the plain form, and rewritten.
-  for (const cmd of ['DataTug query run -f q.dtql', 'DATATUG query run -f q.dtql', '~/.local/bin/DataTug query run -f q.dtql']) expect({ cmd, kind: classify(cmd, false).kind }).toEqual({ cmd, kind: 'plain' })
+  for (const cmd of ['DataTug query run -f q.query.tugql', 'DATATUG query run -f q.query.tugql', '~/.local/bin/DataTug query run -f q.query.tugql']) expect({ cmd, kind: classify(cmd, false).kind }).toEqual({ cmd, kind: 'plain' })
 })
 
 test('a pure help call passes through, and words of the command elsewhere are not matched', () => {

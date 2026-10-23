@@ -25,7 +25,7 @@ export function metaDoc(id: string, opts: { columns?: Col[]; ref?: string | null
     cliVersion: '0.94.0',
     dataBytes: opts.dataBytes ?? 0,
     db: { ref, project: ref === null ? null : 'demo', env: ref === null ? null : 'local', source: ref === null ? null : 'chinook', driver: 'sqlite' },
-    query: opts.query ?? { kind: 'dtql', dtql: 'from: Invoice', policy: 'none' },
+    query: opts.query ?? { kind: 'tugql', tugql: 'from: Invoice', policy: 'none' },
     rows: { kept: opts.kept ?? 3, hasMore: opts.hasMore ?? false, truncatedBy: 'none' },
     provenance: null,
     columns,
