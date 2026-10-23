@@ -2,7 +2,7 @@
 
 AI plugin for [DataTug](https://datatug.io) - skills that teach AI agents how to use the `datatug` CLI for data exploration, dataset management, schema scanning, and query execution.
 
-This repository contains the plugin source. It is installed on top of the [`datatug` CLI](https://github.com/datatug/datatug-cli); the CLI is a prerequisite.
+This repository contains the plugin source. It is installed on top of the [`datatug` CLI](https://datatug.io/en/docs/install); the CLI is a prerequisite.
 
 ## Contents
 
@@ -101,13 +101,13 @@ The root [`plugin.json`](plugin.json) declares the portable Agent Plugins schema
 The `datatug` CLI must be on your `PATH` before any wrapper skill can run. Options:
 
 - Invoke `/datatug:datatug-install` inside Claude Code - the [install skill](skills/datatug-install/SKILL.md) shows the platform-appropriate install commands.
-- Or install directly per the [DataTug CLI installation guide](https://github.com/datatug/datatug-cli#installation).
+- Or install directly per the [DataTug CLI installation guide](https://datatug.io/en/docs/install).
 
 Verify with `datatug --help`.
 
 ## Relationship to the CLI
 
-The plugin wraps the `datatug` CLI - it does not replace it. Skills encode *when* to call a command, *which* flags to pass, and *how* to interpret exit codes. The CLI source of truth is [`datatug/datatug-cli`](https://github.com/datatug/datatug-cli).
+The plugin wraps the `datatug` CLI - it does not replace it. Skills encode *when* to call a command, *which* flags to pass, and *how* to interpret exit codes. The CLI's commands are documented in the [CLI reference](https://datatug.io/en/docs/reference/cli).
 
 A change in the CLI surface typically produces a matching skill update in this repository; the two evolve together but release independently.
 
