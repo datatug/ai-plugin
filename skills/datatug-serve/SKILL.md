@@ -30,4 +30,5 @@ datatug serve
 
 - Long-running process. Exits on `SIGINT` / `SIGTERM`.
 - Default port is **8989**.
-- Run `datatug serve --help` for the authoritative flag list. (Note: `--help` on the current CLI shows no additional flags beyond `--help`; host/TLS/port options are not confirmed to be wired yet.)
+- Run `datatug serve --help` for the authoritative flag list, including `--project`, `--host`, `--port`, `--as`, `--role` and `--allow-opaque-sql`. Native SQL policy requirements are covered in the [MCP skill](../datatug-mcp/SKILL.md).
+- For MCP clients, use the separate `datatug mcp` stdio bridge; `serve` owns the HTTP agent and does not itself establish query-builder tab tools.

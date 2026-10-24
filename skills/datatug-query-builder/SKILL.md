@@ -1,11 +1,16 @@
 ---
 name: datatug-query-builder
-description: Build and progressively refine a read-only DataTug query by conversation, driving the datatug serve query-builder over MCP. The query and results show live in the DataTug Web UI; you (the agent) never write SQL by hand. Use when the user wants to build, refine, or explore a query against a DataTug connection.
+description: Planned conversational DataTug query-builder contract, usable only when a connected server actually advertises its tab tools. For released local MCP saved-query exploration, use datatug-mcp.
 ---
 
 # DataTug Query Builder
 
-Build a query *with* the user by driving the `datatug serve` query-builder daemon over **MCP**. You hold the conversation in this terminal; the daemon holds the query (one canonical *dalgo* AST per **tab**) and streams it plus results to the **Web UI** the user opens from a link you give them.
+The workflow below preserves the planned query-builder contract. The released
+local `datatug mcp` saved-SQL bridge does not implement these tab tools. For
+released setup and saved-query exploration, use
+[`datatug-mcp`](../datatug-mcp/SKILL.md).
+
+When a connected server implements this contract, build a query *with* the user by driving the `datatug serve` query-builder daemon over **MCP**. You hold the conversation in this terminal; the daemon holds the query (one canonical *dalgo* AST per **tab**) and streams it plus results to the **Web UI** the user opens from a link you give them.
 
 > Implements `spec/features/query-builder` — the agent-side surface of the Serve-Brokered AI Query Builder capability (`specscore:feature/serve-brokered-query-builder@github.com/datatug/datatug`).
 
@@ -17,11 +22,11 @@ command -v datatug >/dev/null 2>&1
 
 On miss, invoke `/datatug:datatug-install` and stop.
 
-Then confirm a query-builder daemon is reachable over MCP. If no `datatug serve` daemon with the query builder is connected, tell the user to start one and stop — do **not** try to build the query another way:
-
-```bash
-datatug serve   # starts the HTTP + MCP daemon the builder runs on
-```
+Inspect the connected server's advertised tools before using this contract.
+Proceed only if `create_tab`, `apply_change`, `inspect` and `run` are actually
+available. Starting `datatug serve` alone does not establish this MCP contract.
+If the tools are absent, explain that limitation; route saved-query requests to
+`datatug-mcp` and do not invent tab tool calls.
 
 ## Core rule
 

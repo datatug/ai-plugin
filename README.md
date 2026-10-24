@@ -17,6 +17,17 @@ This repository contains the plugin source. It is installed on top of the [`data
 | [`gemini-extension.json`](gemini-extension.json) | Gemini CLI extension manifest |
 | [`.github/plugin.json`](.github/plugin.json) | GitHub Copilot CLI / VS Code agent plugin manifest |
 
+## Local MCP and MCP Apps
+
+The [MCP skill](skills/datatug-mcp/SKILL.md) covers `datatug mcp`, a local stdio
+bridge to a separately running DataTug agent, for discovery and authorized saved
+SQLite queries. The saved-query Explorer is an MCP Apps developer preview
+accepted through the official reference host; desktop stdio setup establishes
+plain tools and model-visible rows. See the [setup and privacy guide](https://datatug.io/en/docs/integrations/mcp/)
+for the negotiated private App mode and its current acceptance scope. The
+[query-builder skill](skills/datatug-query-builder/SKILL.md) preserves a planned
+tab-tool contract and requires those tools to be advertised by the server.
+
 ## Claude Code mod
 
 In Claude Code, the plugin also ships a [mod](https://code.claude.com/docs/en/plugins/mods/overview) with two views. Everything either shows comes from the `datatug` CLI; the mod reads no project file itself.
