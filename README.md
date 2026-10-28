@@ -4,6 +4,12 @@ AI plugin for [DataTug](https://datatug.io) - skills that teach AI agents how to
 
 This repository contains the plugin source. It is installed on top of the [`datatug` CLI](https://datatug.io/en/docs/install); the CLI is a prerequisite.
 
+## Watch
+
+<a href="https://youtu.be/_mla67RoPWY"><img src="https://datatug.app/static/illustrations/explainer-sales-per-capita-poster-1280.webp" alt="Where are we underselling? Sales per capita across three sources (1:30)" width="560"></a>
+
+▶ **[Where are we underselling? (1:30)](https://youtu.be/_mla67RoPWY)** — Includes a real Claude Code session with this plugin running a saved query.
+
 ## Contents
 
 | Directory | Description |
