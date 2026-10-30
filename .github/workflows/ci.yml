@@ -65,12 +65,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # specscore's docs: pin an exact released tag, never @main.
-      # The runner image ships Go.
       - name: Install specscore
-        run: |
-          GOBIN="${RUNNER_TEMP}/bin" go install "github.com/specscore/specscore-cli/cmd/specscore@${SPECSCORE_VERSION}"
-          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+        uses: specscore/setup-specscore@7a72272020daa8a1df5e2509c1d5b34fa4a9210d
+        with:
+          version: ${{ env.SPECSCORE_VERSION }}
       - name: Lint the specs
         run: |
           specscore --version
