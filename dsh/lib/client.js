@@ -153,6 +153,7 @@ window.__ModuleLoader__.load({
       const [boot, setBoot] = useState({ phase: 'loading' })
       const [projects, setProjects] = useState({ phase: 'idle' })
       const [project, setProject] = useState('')
+      const [folder, setFolder] = useState('')
       const [listing, setListing] = useState({ phase: 'idle' })
       const [filter, setFilter] = useState('')
       const [picked, setPicked] = useState(null)
@@ -184,18 +185,19 @@ window.__ModuleLoader__.load({
         return () => { live = false }
       }, [boot.phase, boot.available, host])
 
-      const loadProject = useCallback((id) => {
-        if (!id) return
-        setListing({ phase: 'loading' })
+      // A project is addressed either by its registered id or by its folder.
+      const loadProject = useCallback((target) => {
+        if (target === null || (target.project === undefined && target.directory === undefined)) return
+        setListing({ phase: 'loading', target })
         setPicked(null)
         setRows({ phase: 'idle', limit: 50 })
-        invoke(host, 'show', { project: id, depth: 'columns' }).then(
-          (value) => setListing({ phase: 'ready', value: value?.listing, id }),
-          (error) => setListing({ phase: 'error', message: String(error?.message ?? error) }),
+        invoke(host, 'show', { ...target, depth: 'columns' }).then(
+          (value) => setListing({ phase: 'ready', value: value?.listing, target }),
+          (error) => setListing({ phase: 'error', message: String(error?.message ?? error), target }),
         )
       }, [host])
 
-      useEffect(() => { if (project) loadProject(project) }, [project, loadProject])
+      useEffect(() => { if (project) loadProject({ project }) }, [project, loadProject])
 
       const index = useMemo(() => flatten(listing.value), [listing.value])
 
@@ -224,7 +226,7 @@ window.__ModuleLoader__.load({
         if (picked === null) return
         setRows({ phase: 'loading', limit })
         invoke(host, 'rows', {
-          project: picked.project,
+          ...picked.target,
           env: picked.env,
           source: picked.source,
           table: picked.table,
@@ -256,7 +258,7 @@ window.__ModuleLoader__.load({
       const header = h('div', { className: 'dtg-bar' },
         h('span', { className: 'dtg-bar-title' }, 'DataTug'),
         boot.phase === 'ready' && boot.available
-          ? h(Button, { onClick: () => { if (project) loadProject(project) }, title: 'Reload this project' }, 'Refresh')
+          ? h(Button, { onClick: () => { if (listing.target) loadProject(listing.target) }, title: 'Reload this project' }, 'Refresh')
           : null,
         h('span', { className: 'dtg-bar-meta' }, boot.phase === 'ready' && boot.version ? `CLI ${boot.version}` : ''),
       )
@@ -288,8 +290,21 @@ window.__ModuleLoader__.load({
               projects.phase === 'ready' && projects.list.length === 0
                 ? h('option', { value: '' }, 'No projects registered')
                 : (projects.list ?? []).map((item) => h('option', { key: item.id, value: item.id }, item.title ? `${item.title} (${item.id})` : item.id))),
-              project ? h(Button, { onClick: () => loadProject(project) }, 'Reload') : null,
+              project ? h(Button, { onClick: () => loadProject({ project }) }, 'Reload') : null,
             ),
+
+          // Any DataTug project folder works, registered or not.
+          h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 } },
+            h('input', {
+              className: 'dtg-input',
+              placeholder: 'Or open a project folder…',
+              value: folder,
+              onChange: (event) => setFolder(event.target.value),
+              onKeyDown: (event) => { if (event.key === 'Enter') loadProject({ directory: folder.trim() }) },
+              'aria-label': 'DataTug project folder',
+            }),
+            h(Button, { onClick: () => loadProject({ directory: folder.trim() }) }, 'Open'),
+          ),
 
           picked === null ? null : h('div', { className: 'dtg-crumbs' },
             h(Button, { onClick: () => { setPicked(null); setRows({ phase: 'idle', limit: 50 }) } }, '‹ Tables'),
@@ -316,8 +331,8 @@ window.__ModuleLoader__.load({
                   className: 'dtg-row',
                   role: 'button',
                   tabIndex: 0,
-                  onClick: () => { setPicked({ ...item, project }); setRows({ phase: 'idle', limit: 50 }) },
-                  onKeyDown: (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPicked({ ...item, project }); setRows({ phase: 'idle', limit: 50 }) } },
+                  onClick: () => { setPicked({ ...item, target: listing.target }); setRows({ phase: 'idle', limit: 50 }) },
+                  onKeyDown: (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPicked({ ...item, target: listing.target }); setRows({ phase: 'idle', limit: 50 }) } },
                 },
                 h('span', { className: 'dtg-row-name' }, item.table),
                 h('span', { className: 'dtg-tag' }, String(item.columns.length)),
