@@ -15,6 +15,7 @@ This repository contains the plugin source. It is installed on top of the [`data
 | Directory | Description |
 |---|---|
 | [`skills/`](skills/README.md) | Agent skills - one per major `datatug` CLI surface area, progressively loaded per-verb |
+| [`dsh/`](dsh/README.md) | DeepSeek Harness plugin: a DataTug tab in the right sidebar, a `datatug` tool and these skills (installed in Creator mode) |
 | [`.claude-plugin/`](.claude-plugin/plugin.json) | Claude Code plugin manifest |
 | [`hooks/`](hooks/hooks.json), [`lib/`](lib/cli.js), [`types/`](types/index.d.ts) | Claude Code mod: the `/datatug` panel and `/datatug project` pane (Claude Code only) |
 | [`tests/`](tests/mod.test.ts) | Mod tests, run with `claude plugin test` |
@@ -71,6 +72,26 @@ The mod runs the `datatug` found first on your `PATH`, in the session's working 
 It requires Claude Code 2.1.287 or later and `datatug` 0.84.1 or later (what the panel needs: `datatug://` database references, `datatug db add`, `datatug db schema --columns` and the `--client` flag); the Open in DataTug links need `datatug` 0.86.0 or later (the record key and a one-time code in the link fragment, and an agent that admits only the hosted web UI), and with an older one the cards say to update it. The result card needs `datatug` 0.92.0 or later, and its web link and terminal command 0.94.0 or later; with an older one Claude's queries keep the grid. Every `datatug` command the mod runs carries `DATATUG_CLIENT=claude-mod`, so the CLI keeps the local agent running for the links; the mod never starts it itself. A database you open by path or connection string is added to the selected project's `local` environment under a source id of its own (a SQLite file by its path, any other database through an environment variable of its own). To link to a web UI you run locally, set the plugin's **Development web UI host** setting (`/config`) to exactly `http://datatug.localhost` (or `https://`, with an optional port); nothing else is accepted, and the mod never takes it from the CLI. Other hosts do not run the mod (GitHub Copilot CLI logs one error line about the root `hooks/hooks.json` when it loads the plugin, and still loads its skills). If the CLI is missing or older, `/datatug` says so and names the fix.
 
 Develop and test it from this directory with `claude --plugin-dir .`, `claude plugin validate .` and `claude plugin test`.
+
+## DeepSeek Harness plugin
+
+[`dsh/`](dsh/README.md) is the DeepSeek Harness counterpart of the Claude Code mod: a
+plugin bundle that adds a **DataTug tab to the right sidebar** (projects, environments,
+databases, schemas, tables, columns, rows, CSV copy), a **`datatug` tool** the agent
+calls instead of Bash, and the ten skills in [`skills/`](skills/README.md) as a bundled
+skill provider. It runs the same local `datatug` CLI, keeps rows in the panel, and
+needs no build step.
+
+Install it from a **Creator mode** session (the mode whose `plugin_manager` tool
+installs bundles), pointing at this directory:
+
+```text
+plugin_manager install_bundle { target: "<repo>/dsh" }
+```
+
+or from a shell: `dsh plugin --profile web add <repo>/dsh`, then reload the Harness
+page and pick **DataTug** in the right sidebar guide. See [`dsh/README.md`](dsh/README.md)
+for the tool's actions, configuration and limits.
 
 ## Install
 

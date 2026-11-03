@@ -1,0 +1,44 @@
+{
+  "name": "@datatug/dsh-plugin",
+  "version": "0.3.10",
+  "private": true,
+  "type": "module",
+  "description": "DataTug for DeepSeek Harness: browse DataTug projects, schemas and rows in a native right-pane panel, and let the agent use the datatug CLI.",
+  "keywords": [
+    "datatug",
+    "dsh",
+    "deepseek-harness",
+    "data",
+    "sql"
+  ],
+  "license": "MIT",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "lib/**/*.js",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

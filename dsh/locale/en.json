@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DataTug",
+    "description": "Browse DataTug projects, schemas and rows in a right-pane panel, and let the agent query them with the datatug CLI."
+  }
+}
