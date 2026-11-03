@@ -1,0 +1,10 @@
+# DataTug bundle patch: one Host row carrying the datatug CLI service, the
+# `datatug` model tool and the DataTug skills, plus the browser half of the same
+# package (declared by package.json `dsh.client` and loaded from `./client`).
+#
+# Install it in Creator mode with the plugin_manager tool:
+#   install_bundle { target: "<repo>/dsh" }
+- insert:
+    - id: datatug
+      name: '@datatug/dsh-plugin'
+      config: {}
