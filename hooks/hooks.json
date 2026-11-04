@@ -1,4 +1,30 @@
 {
-  "description": "The DataTug panel and project pane mod",
-  "modules": ["./register.tsx"]
+  "description": "The DataTug panel and project pane mod, and the agent-session hooks",
+  "modules": [
+    "./register.tsx"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/agent-session.js\" start",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/agent-session.js\" end",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
 }

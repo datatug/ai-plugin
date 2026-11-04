@@ -17,6 +17,7 @@
     "agent-skills"
   ],
   "skills": [
+    "./skills/datatug-agent-access",
     "./skills/datatug-datasets",
     "./skills/datatug-init",
     "./skills/datatug-install",

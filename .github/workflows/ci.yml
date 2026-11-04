@@ -52,8 +52,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
-      - name: Test the manifest checker
-        run: node --test scripts/check-manifests.test.js
+      - name: Test the manifest checker and the agent-session hook
+        run: node --test scripts/check-manifests.test.js scripts/agent-session.test.js
       - name: Check the manifests
         run: node scripts/check-manifests.js
 

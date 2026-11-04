@@ -35,6 +35,12 @@ for the negotiated private App mode and its current acceptance scope. The
 [query-builder skill](skills/datatug-query-builder/SKILL.md) preserves a planned
 tab-tool contract and requires those tools to be advertised by the server.
 
+## Agent sessions (Claude Code hooks)
+
+In Claude Code the plugin also registers `SessionStart` and `SessionEnd` hooks (`hooks/hooks.json`, script [`scripts/agent-session.js`](scripts/agent-session.js), run with `node`). When a session starts, the hook reads `session_id` from Claude Code's hook payload, runs `datatug agent session start --harness claude-code --harness-session <id> --agent-id <ag-...> --space <s> --project <p>` and appends `export DATATUG_HARNESS_SESSION=<id>` to `$CLAUDE_ENV_FILE`, so agent calls (`datatug db get/preview --agent`, `datatug access request --agent`) carry the session and its *This session* approvals end with the conversation. When the session ends, it runs `datatug agent session end --harness-session <id> --reason harness-ended`. The agent ID, space and project come from `DATATUG_AGENT_ID`, `DATATUG_SPACE_ID` and `DATATUG_PROJECT_ID`, else the plugin settings `agentId`, `spaceId` and `projectId` (`/config`). With any of them, the CLI or the session ID missing, the hook does nothing and logs one line saying why. The session ID never comes from model text, and the credential stays in the CLI's OS keyring. On other harnesses, see the [agent-access skill](skills/datatug-agent-access/SKILL.md) for `--harness-session`.
+
+Honest limit: session binding scopes honest harness use; it is not a boundary against a shell agent running as the same OS user, which can name another of its own live sessions.
+
 ## Claude Code mod
 
 In Claude Code, the plugin also ships a [mod](https://code.claude.com/docs/en/plugins/mods/overview) with two views. Everything either shows comes from the `datatug` CLI; the mod reads no project file itself.
