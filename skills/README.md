@@ -32,6 +32,7 @@ This plugin follows the same design as the sibling [`specscore`](https://github.
 | [`datatug-queries/`](datatug-queries/SKILL.md) | `datatug queries` | `list`, `run` |
 | [`datatug-validate/`](datatug-validate/SKILL.md) | `datatug validate` | inline |
 | [`datatug-serve/`](datatug-serve/SKILL.md) | `datatug serve` | inline |
+| [`datatug-agent-access/`](datatug-agent-access/SKILL.md) | `datatug db get/preview --agent`, `access request --agent`, `agent session` | inline |
 | [`datatug-mcp/`](datatug-mcp/SKILL.md) | `datatug mcp` (local saved-query tools; Apps developer preview) | inline |
 | [`datatug-query-builder/`](datatug-query-builder/SKILL.md) | Planned tab-tool contract; requires advertised tools | inline |
 
@@ -65,4 +66,4 @@ The CLI exposes additional commands not yet covered by a skill — invoke them d
 
 ## Status
 
-**Shipped:** `datatug-install/` (infrastructure), `datatug-init/`, `datatug-projects/`, `datatug-datasets/`, `datatug-scan/`, `datatug-queries/`, `datatug-validate/`, `datatug-serve/`, `datatug-mcp/` (CLI wrappers). The query-builder skill documents a planned contract, guarded by actual tool discovery.
+**Shipped:** `datatug-install/` (infrastructure), `datatug-init/`, `datatug-projects/`, `datatug-datasets/`, `datatug-scan/`, `datatug-queries/`, `datatug-validate/`, `datatug-serve/`, `datatug-mcp/`, `datatug-agent-access/` (CLI wrappers). The query-builder skill documents a planned contract, guarded by actual tool discovery.
