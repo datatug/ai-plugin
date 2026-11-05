@@ -6,9 +6,9 @@ This repository contains the plugin source. It is installed on top of the [`data
 
 ## Watch
 
-<a href="https://youtu.be/_mla67RoPWY"><img src="https://datatug.app/static/illustrations/explainer-sales-per-capita-poster-1280.webp" alt="Where are we underselling? Sales per capita across three sources (1:30)" width="560"></a>
+<a href="https://youtu.be/ENjhplq2SQ0"><img src="https://datatug.app/static/illustrations/explainer-sales-per-capita-poster-1280.webp" alt="Where are we underselling? Sales per capita across three sources (1:30)" width="560"></a>
 
-▶ **[Where are we underselling? (1:30)](https://youtu.be/_mla67RoPWY)** — Includes a real Claude Code session with this plugin running a saved query.
+▶ **[Where are we underselling? (1:30)](https://youtu.be/ENjhplq2SQ0)** — Includes a real Claude Code session with this plugin running a saved query.
 
 ## Contents
 
