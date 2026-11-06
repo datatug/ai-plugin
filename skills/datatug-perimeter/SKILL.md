@@ -75,7 +75,7 @@ Expect exit code 5 and one `ACCESS_DENIED` JSON object on stderr. Its `reason` s
 datatug policy exception propose --project datatug-demo --source chinook --role agent --table Employee --fields EmployeeId,FirstName,LastName,Title --lifetime session --for 15m --reason "Find the support representative for Canadian customers" --format json
 ```
 
-Keep the `id` from the JSON. `--lifetime session` binds the exception to this agent session: reads from another conversation do not get it, and it still ends after 15 minutes. If the CLI says no harness session was detected, propose again with `--lifetime deadline` and tell the person it lasts 15 minutes for any session. Always include the table's key column (`EmployeeId`): a paged read without it is refused.
+Keep the `id` from the JSON. `--lifetime session` binds the exception to this agent session: reads from another conversation do not get it, and it still ends after 15 minutes. The session ID comes from your harness and is self-reported: it keeps an honest agent to one conversation, it is not a security boundary. If the CLI says no harness session was detected, propose again with `--lifetime deadline` and tell the person it lasts 15 minutes for any session. Always include the table's key column (`EmployeeId`): a paged read without it is refused.
 
 **4. The person decides.** Say this, with the real id from step 3 in place of `<id>`:
 
