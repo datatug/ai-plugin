@@ -69,4 +69,4 @@ The CLI exposes additional commands not yet covered by a skill — invoke them d
 
 ## Status
 
-**Shipped:** `datatug-install/` (infrastructure), `datatug-init/`, `datatug-projects/`, `datatug-datasets/`, `datatug-scan/`, `datatug-queries/`, `datatug-validate/`, `datatug-serve/`, `datatug-mcp/`, `datatug-agent-access/` (CLI wrappers). The query-builder skill documents a planned contract, guarded by actual tool discovery.
+**Shipped:** `datatug-install/`, `datatug-onboarding/`, `datatug-db-analyze/`, `datatug-perimeter/` (infrastructure and onboarding), `datatug-init/`, `datatug-projects/`, `datatug-datasets/`, `datatug-scan/`, `datatug-queries/`, `datatug-validate/`, `datatug-serve/`, `datatug-mcp/`, `datatug-agent-access/` (CLI wrappers). The query-builder skill documents a planned contract, guarded by actual tool discovery.
