@@ -1,6 +1,6 @@
 {
   "name": "@datatug/dsh-plugin",
-  "version": "0.3.10",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "DataTug for DeepSeek Harness: browse DataTug projects, schemas and rows in a native right-pane panel, and let the agent use the datatug CLI.",
