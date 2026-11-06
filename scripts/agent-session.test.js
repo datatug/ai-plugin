@@ -5,11 +5,16 @@ const childProcess = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { plan, run, sessionIdOf } = require('./agent-session.js');
+const { callerContext, plan, run, sessionIdOf } = require('./agent-session.js');
 
 const SID = '0b1c7a52-0e7d-4c43-9d1f-3a1c2b4d5e6f';
 const PAYLOAD = JSON.stringify({ session_id: SID, hook_event_name: 'SessionStart', source: 'startup' });
 const ENV = { DATATUG_AGENT_ID: 'ag-1', DATATUG_SPACE_ID: 's1', DATATUG_PROJECT_ID: 'p1', CLAUDE_ENV_FILE: '/env/file' };
+
+
+// The cloud agent-session ID is exported only after a started session; the
+// attribution-only caller context may be written regardless.
+const exportsHarnessSession = (io) => io.appended.some(([, text]) => text.includes('DATATUG_HARNESS_SESSION'));
 
 function fakeIo(overrides = {}) {
   const io = {
@@ -37,7 +42,10 @@ test('start runs datatug agent session start with the payload session ID and exp
   assert.equal(io.calls[0].cmd, 'datatug');
   assert.deepEqual(io.calls[0].args, ['agent', 'session', 'start', '--harness', 'claude-code', '--harness-session', SID, '--agent-id', 'ag-1', '--space', 's1', '--project', 'p1']);
   assert.deepEqual(io.calls[0].options.stdio, ['ignore', 'pipe', 'pipe']);
-  assert.deepEqual(io.appended, [['/env/file', 'export DATATUG_HARNESS_SESSION=' + SID + '\n']]);
+  assert.deepEqual(io.appended, [
+    ['/env/file', 'export DATATUG_CALLER_HARNESS=claude-code\nexport DATATUG_CALLER_SESSION=' + SID + '\n'],
+    ['/env/file', 'export DATATUG_HARNESS_SESSION=' + SID + '\n'],
+  ]);
   assert.deepEqual(io.logs, ['datatug agent session: Agent session as-1 started for ag-1']);
 });
 
@@ -70,7 +78,7 @@ test('the hook is a no-op with a logged reason when something is missing', () =>
     const io = fakeIo(overrides);
     assert.equal(run('start', io), 'skipped');
     assert.equal(io.calls.length, 0);
-    assert.equal(io.appended.length, 0);
+    assert.equal(exportsHarnessSession(io), false);
     assert.equal(io.logs.length, 1);
     assert.ok(io.logs[0].startsWith('datatug agent session: skipped: ' + reason), io.logs[0]);
   }
@@ -92,7 +100,7 @@ test('a missing CLI, a CLI that hangs and a failing CLI never export the ID', ()
   const silent = fakeIo({ result: { status: 1, stdout: '', stderr: '' } });
   assert.equal(run('end', silent), 'failed');
   assert.deepEqual(silent.logs, ['datatug agent session: end failed: exit code 1']);
-  for (const io of [missing, hung, failed, silent]) assert.deepEqual(io.appended, []);
+  for (const io of [missing, hung, failed, silent]) assert.equal(exportsHarnessSession(io), false);
 });
 
 test('the session ID is taken only from the payload session_id field', () => {
@@ -116,11 +124,40 @@ test('the script runs as a hook: payload on stdin, export in CLAUDE_ENV_FILE, no
   assert.equal(out.status, 0);
   assert.equal(out.stdout, '');
   assert.equal(out.stderr, 'datatug agent session: Agent session as-9 started\n');
-  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export DATATUG_HARNESS_SESSION=' + SID + '\n');
+  assert.equal(fs.readFileSync(envFile, 'utf8'), 'export DATATUG_CALLER_HARNESS=claude-code\nexport DATATUG_CALLER_SESSION=' + SID + '\nexport DATATUG_HARNESS_SESSION=' + SID + '\n');
   assert.match(fs.readFileSync(argsFile, 'utf8'), /--harness-session\n0b1c7a52/);
   // Without the CLI on PATH it exits 0 with the reason.
   const none = childProcess.spawnSync(process.execPath, [script, 'start'], { input: PAYLOAD, env: { ...env, PATH: dir }, encoding: 'utf8' });
   assert.equal(none.status, 0);
   assert.match(none.stderr, /not installed/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('start exports the caller context even without a DataTug agent ID', () => {
+  const stdinText = JSON.stringify({ session_id: SID, hook_event_name: 'SessionStart', source: 'startup', model: 'claude-sonnet-5-5', agent_type: 'Explore' });
+  const io = fakeIo({ stdinText, env: { CLAUDE_ENV_FILE: '/env/file' } });
+  assert.equal(run('start', io), 'skipped');
+  assert.equal(io.calls.length, 0, 'no cloud agent session without an agent ID');
+  assert.deepEqual(io.appended, [['/env/file',
+    'export DATATUG_CALLER_HARNESS=claude-code\n' +
+    'export DATATUG_CALLER_SESSION=' + SID + '\n' +
+    'export DATATUG_CALLER_MODEL=claude-sonnet-5-5\n' +
+    'export DATATUG_CALLER_AGENT_TYPE=Explore\n']]);
+});
+
+test('caller context accepts a model object, drops unsafe values and needs a JSON payload', () => {
+  assert.deepEqual(callerContext(JSON.stringify({ session_id: SID, model: { id: 'claude-opus-5-5[1m]' } })),
+    ['export DATATUG_CALLER_HARNESS=claude-code\n', 'export DATATUG_CALLER_SESSION=' + SID + '\n', 'export DATATUG_CALLER_MODEL=claude-opus-5-5[1m]\n']);
+  assert.deepEqual(callerContext(JSON.stringify({ session_id: 'x; rm -rf ~', model: '$(id)', agent_type: 'a b' })), ['export DATATUG_CALLER_HARNESS=claude-code\n']);
+  assert.deepEqual(callerContext('not json'), []);
+  assert.deepEqual(callerContext('null'), []);
+});
+
+test('end and start without CLAUDE_ENV_FILE write no caller context', () => {
+  const io = fakeIo({ env: { DATATUG_AGENT_ID: 'ag-1', DATATUG_SPACE_ID: 's1', DATATUG_PROJECT_ID: 'p1' } });
+  run('start', io);
+  assert.deepEqual(io.appended, []);
+  const end = fakeIo();
+  run('end', end);
+  assert.deepEqual(end.appended, []);
 });

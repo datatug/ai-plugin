@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 // Claude Code SessionStart / SessionEnd hook: starts and ends the DataTug agent
-// session (Perimeter D29) of the Claude Code session it runs in.
+// session (Perimeter D29) of the Claude Code session it runs in, and on start
+// exports the attribution-only caller context (DATATUG_CALLER_*; see callerContext).
 //
 //   node scripts/agent-session.js start   (SessionStart)
 //   node scripts/agent-session.js end     (SessionEnd)
@@ -32,6 +33,34 @@ function setting(env, names) {
     if (value !== '') return value;
   }
   return '';
+}
+
+// Who is calling DataTug, for attribution only (never authority: an agent
+// running as the same OS user can set these too). Written on every start, with
+// or without a DataTug agent ID, so `datatug` commands can record the harness,
+// its session and the model in their audit and proposals. Names are separate
+// from DATATUG_HARNESS_SESSION, which drives the cloud agent session (D29).
+const MODEL_ID = /^[A-Za-z0-9._:\[\]\/-]{1,128}$/;
+const AGENT_TYPE = /^[A-Za-z0-9._:-]{1,64}$/;
+
+function callerContext(stdinText) {
+  let payload;
+  try {
+    payload = JSON.parse(stdinText);
+  } catch {
+    return [];
+  }
+  if (!payload || typeof payload !== 'object') return [];
+  const lines = ['DATATUG_CALLER_HARNESS=' + HARNESS];
+  const sessionId = payload.session_id;
+  if (typeof sessionId === 'string' && HARNESS_SESSION_ID.test(sessionId)) lines.push('DATATUG_CALLER_SESSION=' + sessionId);
+  // The model can be absent (for example after /clear); a later SessionStart
+  // writes it again, and a later export wins.
+  const model = typeof payload.model === 'string' ? payload.model : payload.model && typeof payload.model.id === 'string' ? payload.model.id : '';
+  if (MODEL_ID.test(model)) lines.push('DATATUG_CALLER_MODEL=' + model);
+  if (typeof payload.agent_type === 'string' && AGENT_TYPE.test(payload.agent_type)) lines.push('DATATUG_CALLER_AGENT_TYPE=' + payload.agent_type);
+  // Every value matched a pattern without shell metacharacters, so it needs no quoting.
+  return lines.map((line) => 'export ' + line + '\n');
 }
 
 function sessionIdOf(stdinText) {
@@ -74,6 +103,10 @@ function firstLine(text) {
 // Returns what it did, for tests: 'skipped', 'failed', 'started' or 'ended'.
 function run(mode, io) {
   const log = (line) => io.log('datatug agent session: ' + line);
+  if (mode === 'start' && io.env.CLAUDE_ENV_FILE) {
+    const context = callerContext(io.stdinText);
+    if (context.length > 0) io.appendFile(io.env.CLAUDE_ENV_FILE, context.join(''));
+  }
   const step = plan(mode, io.stdinText, io.env);
   if (step.reason) {
     log('skipped: ' + step.reason);
@@ -123,4 +156,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { plan, run, sessionIdOf, setting };
+module.exports = { callerContext, plan, run, sessionIdOf, setting };
