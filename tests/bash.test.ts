@@ -361,3 +361,9 @@ test('a quoted whole argument with spaces is plain; a quoted forbidden flag stil
     expect({ cmd, kind: d.kind }).toEqual({ cmd, kind: 'deny' })
   }
 })
+
+test('the store refusal never teaches --no-policies and names the Perimeter read', () => {
+  expect(STORE_TEXT).not.toContain('--no-policies')
+  expect(STORE_TEXT).toContain('--as agent --role agent')
+  expect(STORE_TEXT).toContain('never retry a refused read another way')
+})
