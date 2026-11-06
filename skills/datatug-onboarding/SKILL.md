@@ -26,7 +26,7 @@ datatug projects -o json
 ```
 
 - **CLI missing:** the CLI is needed for every data and project step. Follow <https://datatug.ai/install-skills.md> steps 1–2, then come back here.
-- **CLI older than 0.145.0:** the commands below need 0.145.0 or newer. After a yes, run `datatug self-update --yes`.
+- **CLI too old for this flow:** run `datatug policy exception --help`. If it says the command is unknown, the CLI predates onboarding. After a yes, run `datatug self-update --yes`, then check again.
 - **A project with id `datatug-demo` exists:** the demo is already installed. Offer to go straight to the Perimeter demo (step 4).
 - **Other projects exist:** ask whether to use one of them, or to try the demo first. Never change an existing project without a yes.
 
@@ -34,7 +34,7 @@ datatug projects -o json
 
 Say, in the person's language:
 
-> DataTug is ready. Shall I run the **2-minute demo**? It installs two tiny local databases (a music store in SQLite, support notes in inGitDB) into `~/datatug/demo`: no signup, nothing downloaded. It shows how you control what I can read, and it includes one step that you do yourself in a separate terminal window.
+> DataTug is ready. Shall I run the **2-minute demo**? It installs two tiny local databases (a music store in SQLite, support notes in inGitDB) into `~/datatug/datatug-demo`: no signup, nothing downloaded. It shows how you control what I can read, and it includes one step that you do yourself in a separate terminal window.
 
 That one yes covers the demo install and the read-only demo reads below. The step that changes the policy is the person's own.
 
@@ -60,7 +60,7 @@ Run **`/datatug:datatug-perimeter`**. It runs the allowed read, the refused read
 
 ## 5. Finish
 
-> Done. Your demo project is in `~/datatug/demo`. You saw that I can read only what your policy allows, sensitive values stay masked, and a table you hadn't allowed needed a rule that you added yourself, in your own terminal, for 15 minutes. On this machine DataTug applies those rules itself. They keep an honest agent inside the lines but are not a security wall; for that, use a read-only database user. Onboarding ends here. If you like, I can connect one of your own databases next.
+> Done. Your demo project is in `~/datatug/datatug-demo`. You saw that I can read only what your policy allows, sensitive values stay masked, and a table you had not allowed needed an exception that you decided on yourself, in your own terminal, for 15 minutes. On this machine DataTug applies those rules itself. They keep an honest agent inside the lines but are not a security wall; for that, use a read-only database user. Onboarding ends here. If you like, I can connect one of your own databases next.
 
 Stop. Do not suggest other features. If the person asks to connect their database, go to step 6.
 
