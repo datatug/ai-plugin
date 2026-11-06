@@ -69,13 +69,13 @@ datatug query run --project datatug-demo --source chinook --from Employee --as a
 
 Expect exit code 5 and one `ACCESS_DENIED` JSON object on stderr. Its `reason` says in one line what is missing, and `request.command` shows the shape of a proposal.
 
-**3. Propose an exception.** Ask: "Shall I ask you for a 15-minute exception to read 4 columns of `Employee` (id, name, title), to find who handles support?" On a yes:
+**3. Propose an exception.** Ask: "Shall I ask you for an exception to read 4 columns of `Employee` (id, name, title), for **this conversation only** and at most 15 minutes, to find who handles support?" On a yes:
 
 ```bash
-datatug policy exception propose --project datatug-demo --source chinook --role agent --table Employee --fields EmployeeId,FirstName,LastName,Title --for 15m --reason "Find the support representative for Canadian customers" --format json
+datatug policy exception propose --project datatug-demo --source chinook --role agent --table Employee --fields EmployeeId,FirstName,LastName,Title --lifetime session --for 15m --reason "Find the support representative for Canadian customers" --format json
 ```
 
-Keep the `id` from the JSON. Always include the table's key column (`EmployeeId`): a paged read without it is refused.
+Keep the `id` from the JSON. `--lifetime session` binds the exception to this agent session: reads from another conversation do not get it, and it still ends after 15 minutes. If the CLI says no harness session was detected, propose again with `--lifetime deadline` and tell the person it lasts 15 minutes for any session. Always include the table's key column (`EmployeeId`): a paged read without it is refused.
 
 **4. The person decides.** Say this, with the real id from step 3 in place of `<id>`:
 
@@ -90,7 +90,7 @@ Then wait for the decision. Shell calls in most agents time out after about 2 mi
 datatug policy exception status <id> --project datatug-demo --wait 90s --format json
 ```
 
-- `applied`: say exactly which columns it covers and when it expires, then run step 2 again. Only the applied columns come back, and a labelled column stays masked. Do not ask for more.
+- `applied`: say exactly which columns it covers, that it is for this conversation only, and when it expires at the latest. Then run step 2 again. Only the applied columns come back, and a labelled column stays masked. Do not ask for more.
 - `rejected`: "Understood, I won't read `Employee`." Stop that line.
 - Still `pending` after 5 waits: ask once whether they want to continue. If they have no separate terminal (a web or cloud agent), they can stop here. The refusal was the important part.
 
@@ -100,7 +100,7 @@ datatug policy exception status <id> --project datatug-demo --wait 90s --format 
 datatug policy exception audit --project datatug-demo --format json
 ```
 
-Show the last few events (proposed; applied, narrowed or rejected; used) as a short list. Mention that the exception expires on its own and that the person can end it early with `datatug policy exception revoke <id> --project datatug-demo`. Mention once that this is a local record they could edit, not a tamper-proof log.
+Show the last few events (proposed; applied, narrowed or rejected; used) as a short list. Each `used` event names the agent session that ran the read, so the person can see which conversation used their permission. Mention that the exception expires on its own and that the person can end it early with `datatug policy exception revoke <id> --project datatug-demo`. Mention once that this is a local record they could edit, not a tamper-proof log.
 
 Then hand back to the onboarding skill's finish step, or stop.
 
