@@ -30,15 +30,17 @@ datatug projects -o json
 - **A project with id `datatug-demo` exists:** the demo is already installed. Offer to go straight to the Perimeter demo (step 4).
 - **Other projects exist:** ask whether to use one of them, or to try the demo first. Never change an existing project without a yes.
 
-## 1. Pick a source
+## 1. Offer the demo (one question)
 
 Say, in the person's language:
 
-> DataTug is ready. I can set up a **safe demo**: two small local databases (a music store in SQLite, support notes in inGitDB), no signup, about two minutes. Or I can connect **a database of yours**. Which do you prefer?
+> DataTug is ready. Shall I run the **2-minute demo**? It installs two tiny local databases (a music store in SQLite, support notes in inGitDB) into `~/datatug/demo`: no signup, nothing downloaded. It shows how you control what I can read, and it includes one step that you do yourself in a separate terminal window.
 
-## 2a. Demo
+That one yes covers the demo install and the read-only demo reads below. The step that changes the policy is the person's own.
 
-> This downloads a 1 MB sample database (checked against a pinned SHA-256 checksum) and creates the project `datatug-demo` in `~/datatug/demo`. OK?
+If they would rather start with their own database, go to step 6 now, and run the demo later if they want.
+
+## 2. Install the demo
 
 ```bash
 datatug demo install --format json
@@ -46,16 +48,28 @@ datatug demo install --format json
 
 - `"status":"installed"` or `"unchanged"`: continue.
 - `"status":"preserved"` with a file list: the person edited those files. Leave them alone and say so.
-- A non-zero exit: show the error line. A checksum failure means the download was not the expected file. Do not retry with another source; offer `--offline` if a cached copy exists, or stop.
+- A non-zero exit: show the error line and stop. A checksum failure means the binary's demo data is damaged. Suggest `datatug self-update --yes` (after a yes) and stop; never fetch the data some other way.
 
-The demo ships with a curated description and policy, so skip the analysis interview. Summarise it in two lines (a music store's customers, invoices and staff, plus support notes) and go to step 4.
+## 3. Two lines about the data
 
-## 2b. Their own database
+The demo ships with curated metadata, so skip the interview: "A music store: customers, invoices, tracks and staff (SQLite), plus support notes about customers (inGitDB). The customers' emails and the staff's personal details are marked sensitive."
+
+## 4. Perimeter
+
+Run **`/datatug:datatug-perimeter`**. It runs the allowed read, the refused read, the request, the approval or rejection, and the masked field.
+
+## 5. Finish
+
+> Done. Your demo project is in `~/datatug/demo`. You saw that I can read only what your policy allows, sensitive values stay masked, and a table you hadn't allowed needed a rule that you added yourself, in your own terminal, for 15 minutes. On this machine DataTug applies those rules itself. They keep an honest agent inside the lines but are not a security wall; for that, use a read-only database user. Onboarding ends here. If you like, I can connect one of your own databases next.
+
+Stop. Do not suggest other features. If the person asks to connect their database, go to step 6.
+
+## 6. Their own database (only when asked)
 
 Ask what it is.
 
 - **A SQLite file or an inGitDB folder:** ask for the path only.
-- **PostgreSQL, MySQL, ClickHouse or another server:** ask the person to set an environment variable holding the connection string **in their own shell** (for example `export SHOP_DB=...`) and tell you only the variable's name. Do not read it, print it or echo it. For a real database, suggest they use a read-only database user. That is the only protection that holds even if DataTug has a bug.
+- **PostgreSQL, MySQL, ClickHouse or another server:** ask the person to set an environment variable holding the connection string **in their own shell** (for example `export SHOP_DB=...`) and to tell you only the variable's name. Do not read it, print it or echo it. Recommend a **read-only database user**.
 
 Then propose a project folder and id and, after a yes:
 
@@ -65,20 +79,6 @@ datatug projects add -p <project-id> -d <project-dir>
 datatug db add --project <project-id> --db <path-or-env:VAR> --format json
 ```
 
-If `db add` or the scan fails (wrong path, unreachable server, bad credentials), show the one-line error, say what to check, and offer to retry or switch to the demo. Never ask for the password to "debug" it.
+If `db add` or the scan fails (wrong path, unreachable server, bad credentials), show the one-line error, say what to check, and offer to retry. Never ask for the password to "debug" it.
 
-Then run **`/datatug:datatug-db-analyze`**. It scans the metadata, asks one question and proposes a better project name.
-
-## 3. Name the project
-
-If the analysis proposed a name, ask: "Call this project *<name>*? (yes / another name / skip)". A project groups databases and what you learn about them. Renaming is optional.
-
-## 4. Perimeter
-
-Run **`/datatug:datatug-perimeter`**. It runs the allowed read, the refused read, the request, the approval or rejection, and the masked field.
-
-## 5. Finish
-
-> Done. Your project is in `<project-dir>`. What you saw: I could read only what your policy allows, a refused table needed your approval in your own terminal, and the email addresses stayed masked. Onboarding ends here. Ask me anything about your data whenever you like.
-
-Stop. Do not suggest further features.
+Then run **`/datatug:datatug-db-analyze`** (it scans metadata, asks one question, proposes a project name), then **`/datatug:datatug-perimeter`** for a strict default policy. Stop when the policy is saved or the person declines.
