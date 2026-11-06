@@ -16,13 +16,21 @@ Works during onboarding and later, for example when another database joins an ex
 
 ## 1. Scan and read the structure
 
+Scan once after `db add` (it registers a source but reads nothing). Use the form for the source's kind:
+
 ```bash
-datatug scan -p <project-id> --db <db-id> --env <env>
+datatug scan -p <project-id> --db <db-id> --env <env> -D sqlite3 --path <file.sqlite>
+datatug scan -p <project-id> --db <db-id> --env <env> -D postgres --dsn-env DATATUG_SHOP_DB
+```
+
+Then read the structure:
+
+```bash
 datatug show --project <project-id>
 datatug meaning describe --project <project-id> --source <db-id> --format json
 ```
 
-If `scan` is not needed (the demo, or a fresh `db add` that already scanned), skip it. On large schemas (more than about 50 tables), summarise by name prefix and foreign-key clusters. Do not list everything.
+Skip the scan for the demo, which ships its metadata, and for an inGitDB folder, whose collection definitions already describe it. On large schemas (more than about 50 tables), summarise by name prefix and foreign-key clusters; do not list everything.
 
 ## 2. Propose an understanding
 
@@ -45,13 +53,15 @@ Base the name on what the data is for, not on the database's file name: "Music s
 
 ## 5. Save what was confirmed
 
-Save only confirmed descriptions, after a yes, using the CLI's own writers: `datatug meaning` for sensitivity label **proposals**, and the project's entity and description commands where they exist (check with `datatug entity --help`). Agents may only *propose* sensitivity labels; the person confirms them:
+You may only **propose** sensitivity labels; the person confirms them (`datatug meaning label confirm`, their action). After a yes, propose one label per sensitive column the person agreed on:
 
 ```bash
-datatug meaning label --help
+datatug meaning label propose --agent --project <project-id> --source <db-id> --table <table> --column <column> --class pii --reason "<why>"
 ```
 
-If the CLI has no command for some piece of knowledge, keep it in the conversation summary and say it was not saved. Never edit project files by hand.
+A proposed label masks the column at once, until the person decides. `--class` is `pii`, `financial` or `secret`. This command talks to the local DataTug agent (`datatug serve`). If it says the agent is not running, say so and leave the labels in the conversation summary.
+
+Everything else you learned (purpose, key tables, open questions) stays in the conversation summary; say it was not saved. Never edit project files by hand.
 
 ## Re-analysis
 

@@ -12,7 +12,8 @@ This plugin follows the same design as the sibling [`specscore`](https://github.
 
 ## Skill categories
 
-- **Infrastructure skills** — plugin-level actions not backed by a `datatug` CLI command. Today: `datatug-install`, plus the onboarding orchestration skills `datatug-onboarding`, `datatug-db-analyze` and `datatug-perimeter`.
+- **Infrastructure skills** — plugin-level actions not backed by a `datatug` CLI command. Today: `datatug-install`.
+- **Orchestration skills** — guided flows over several CLI commands: `datatug-onboarding` (first run, ends after Perimeter), `datatug-db-analyze` and `datatug-perimeter`.
 - **CLI-wrapper skills** — one skill per major `datatug` CLI surface area. Each wrapper assumes the CLI is already installed; see the [Pre-flight pattern](#pre-flight-pattern) below.
 
 ## Available infrastructure skills
@@ -69,4 +70,4 @@ The CLI exposes additional commands not yet covered by a skill — invoke them d
 
 ## Status
 
-**Shipped:** `datatug-install/`, `datatug-onboarding/`, `datatug-db-analyze/`, `datatug-perimeter/` (infrastructure and onboarding), `datatug-init/`, `datatug-projects/`, `datatug-datasets/`, `datatug-scan/`, `datatug-queries/`, `datatug-validate/`, `datatug-serve/`, `datatug-mcp/`, `datatug-agent-access/` (CLI wrappers). The query-builder skill documents a planned contract, guarded by actual tool discovery.
+**Shipped:** `datatug-install/` (infrastructure), `datatug-onboarding/`, `datatug-db-analyze/`, `datatug-perimeter/` (orchestration), `datatug-init/`, `datatug-projects/`, `datatug-datasets/`, `datatug-scan/`, `datatug-queries/`, `datatug-validate/`, `datatug-serve/`, `datatug-mcp/`, `datatug-agent-access/` (CLI wrappers). The query-builder skill documents a planned contract, guarded by actual tool discovery.
