@@ -27,6 +27,9 @@
     "./skills/datatug-query-builder",
     "./skills/datatug-scan",
     "./skills/datatug-serve",
-    "./skills/datatug-validate"
+    "./skills/datatug-validate",
+    "./skills/datatug-onboarding",
+    "./skills/datatug-db-analyze",
+    "./skills/datatug-perimeter"
   ]
 }
