@@ -63,6 +63,8 @@ Before moving to the denied read, show the table and distinguish the three check
 datatug query run --project datatug-demo --source support --from support-notes --as agent --role agent --limit 3 --format json
 ```
 
+If the person chose a browser in onboarding, show **🌐 Open the demo** and the [matching handoff](#optional-ui-handoff) here. The browser handoff is independent of the Employee exception. Do not wait for the exception decision before giving it.
+
 ### 2. Expected denial · Employee
 
 If the person has not already agreed to this (the onboarding demo's yes covers it), ask first: "Want to see what happens when I try a table you have not allowed, `Employee`?" Then:
@@ -99,7 +101,9 @@ Then wait for the decision. Shell calls in most agents time out after about 2 mi
 datatug policy exception status <id> --project datatug-demo --wait 90s --format json
 ```
 
-- `applied`: state the actual scope, `appliedFields` and expiry. Run the same Employee query from step 2 again, then show the returned rows as a Markdown table (or point to the native card). Use only the approved fields and do not add extra columns such as the CLI's `$key`. Preserve any masking. If the retry fails or returns extra fields beyond the approved fields and row key, report the failure without displaying the unexpected data. Do not ask for more.
+- `applied`: state the actual scope, `appliedFields` and expiry. The Employee read must append a `used` event to the demo project's local audit log before it can return rows. Run the **same Employee query** from step 2 in the same agent conversation, using an execution context permitted to append to that log. In a sandbox that excludes the demo directory from writes, use the harness's normal permission flow for that exact command. Explain that the permission is to record this use, while the DataTug exception already authorizes the data read. Never ask for a second DataTug exception or change file permissions to make the read work.
+- If the CLI says `its use cannot be written to the audit log`, the exception matched and no rows were returned. If sandbox permissions prevented the append, check that the exception is still applied and unexpired, then retry the same command once through the harness's permission flow in the same conversation. If permission is unavailable or declined, the log itself is unwritable, or the retry fails, report the blocker and go to the audit. Do not retry other denials this way. Never switch sessions, identities, or query paths to make the exception apply.
+- On a successful Employee read, show the returned rows as a Markdown table or point to the native card. Use only the approved fields, leave out the CLI's `$key`, and preserve any masking. If other fields appear, report a failure without displaying them.
 - `rejected`: acknowledge the decision and go to the audit without retrying the query.
 - An expired request or exception: report the expiry, skip the Employee read and show the audit if available.
 - Still `pending` after 5 waits: ask once whether they want to continue. If they have no separate terminal (a web or cloud agent), they can stop here. The refusal was the important part.
@@ -116,7 +120,7 @@ Finish with the [onboarding checklist](../datatug-onboarding/SKILL.md#5-finish),
 
 ### Optional UI handoff
 
-Keep the handoff separate from the checks above. After a verified Customer read, use the [browser mode chosen in setup](../datatug-onboarding/SKILL.md#2-choose-the-browser-ui-before-the-demo). A native result card can provide a handoff when it matches the person's choice. For a browser project handoff, give the matching command below to run in a terminal on the machine that ran the demo.
+Use the [browser mode chosen in setup](../datatug-onboarding/SKILL.md#2-choose-the-browser-ui-before-the-demo). If a native result card offers a working **Open in DataTug** link for that mode, point to the link by name. Otherwise show the matching command below in a code block under **🌐 Open the demo**. Tell the person that it starts the server and opens the browser. Installing the UI alone does not start a server or produce a working project link. If they chose chat only, skip the browser commands.
 
 - **Local browser · open the demo project offline.** Use the installed compatible UI. If an existing pin prevents automatic selection, offer the same command with `--web-ui=<compatible-version>` using the verified version. Leave the pin in place.
 
@@ -130,7 +134,7 @@ Keep the handoff separate from the checks above. After a verified Customer read,
   datatug serve --project "$HOME/datatug/datatug-demo" --host 127.0.0.1 --as agent --role agent --open-browser
   ```
 
-  For either command, use the actual demo directory if different. The CLI serves only the demo project under the agent role, listens on loopback and opens the browser with a short-lived access code. If it doesn't open automatically, use the URL printed in the terminal. Do not guess a link or ask the person to paste the code into chat. The browser opens the project. **Ctrl+C** stops the foreground server. If it fails, offer the terminal handoff.
+  For either command, use the actual demo directory if different. The CLI serves only the demo project under the agent role, listens on loopback and opens the browser with a short-lived access code. If the person wants the agent to open it and the harness can manage a foreground process on the same machine, show the exact command and get approval to start it. Keep the process handle so you can stop that specific server when the person is finished. Otherwise tell them to run it in their own terminal, where **Ctrl+C** stops the server. If the browser doesn't open automatically, tell them to click the link in that terminal. Do not guess a link or copy its access code into chat. If the server fails, give the error and offer the terminal handoff.
 
 - **Terminal · reopen the masked Customer preview.** Where the CLI advertises `--result-id` and `ui --result`, choose a fresh result ID. Show the exact query and ask before running it, explaining that it repeats the allowed read and saves a snapshot in the private local result store. Do not save Employee results or other data obtained through an exception. Give the person the second command with the real ID only if the CLI reports both a saved result and email masking. It opens those rows in a new local DataTug chat session without rerunning the query. If the terminal opens on the project explorer, press **Ctrl+G** to focus the saved result grid. Do not use this manual path when a native card handles results.
 
