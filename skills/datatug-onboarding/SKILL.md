@@ -45,13 +45,32 @@ Before installing or querying, show this short agenda in the person's language. 
 > - **Your decision:** Optionally approve, narrow or reject a short read exception in your own terminal.
 > - **Audit:** See what was requested, what you decided and whether the permission was used.
 
-If the demo isn't installed, say that setup unpacks SQLite and inGitDB sample data into `~/datatug/datatug-demo` and registers it in `~/.datatug.yaml`. No signup or download is needed. Show the exact install command from step 2 before asking. A yes to the stated demo covers the normal reads, including the expected refusal. Follow any stricter approval instructions the person gave. Ask separately before creating an exception proposal or saving a result for a UI handoff. The person applies or rejects the exception themselves.
+If the demo isn't installed, say that setup unpacks bundled SQLite and inGitDB sample data into `~/datatug/datatug-demo` and registers it in `~/.datatug.yaml`. The sample data need no signup or download. A yes to the stated demo covers the normal reads, including the expected refusal. Follow any stricter approval instructions the person gave. Ask separately before creating an exception proposal or saving a result for a UI handoff. The person applies or rejects the exception themselves.
 
 If the person already consented to the demo, skip asking again for any step their consent covers.
 
-If they would rather start with their own database, go to step 5, and offer the demo later.
+If they would rather start with their own database, go to step 6, and offer the demo later.
 
-## 2. Install the demo
+## 2. Choose the browser UI before the demo
+
+Explain the two options, then ask which the person wants. They can also choose **chat only** and use the terminal handoff later.
+
+- **Local web UI:** Install the browser app once and use it offline. The CLI serves both the interface and the demo data on this machine.
+- **Hosted web UI at [DataTug.app](https://datatug.app):** Open the interface online without installing it. It needs internet access to load and the browser may ask for permission to connect to the CLI on this machine.
+
+**The demo data stay on your machine in both browser modes.** The CLI and the browser on the same machine exchange data over a local connection (`127.0.0.1`). The hosted option loads the interface from DataTug.app and gets the demo records directly from the local CLI.
+
+If they choose local, check `datatug web-ui list`. Reuse an installed compatible version. If there is none, show this exact command and ask before running it. It downloads and verifies a compatible DataTug release and installs it under `~/datatug/web-ui` by default. It does not start a server.
+
+```bash
+datatug web-ui install --latest
+```
+
+Verify the installation with `datatug web-ui list`; look for a version marked compatible, since an empty list also exits successfully. Do not change an existing pin. If installation or verification fails, show the error and offer the hosted or chat-only option. Remember the chosen mode for the handoff; do not ask the person to choose it again.
+
+## 3. Install the demo
+
+Show this exact command and ask before running it if its file and registration changes haven't already been approved:
 
 ```bash
 datatug demo install --format json
@@ -61,19 +80,19 @@ datatug demo install --format json
 - If `preserved` lists files, say which edits were kept. If it lists the demo policy or sensitivity labels, stop before querying and explain that the demo's expected access and masking rules may differ.
 - A non-zero exit: show the error line and go to the final checklist. If it says a file "does not match its pinned sha256", the demo files were changed: say so, and do not fetch the data some other way.
 
-## 3. Perimeter
+## 4. Perimeter
 
 Run **`/datatug:datatug-perimeter`** (in other agents, the `datatug-perimeter` skill). It runs the allowed and masked read, the refused read, the exception the person applies or rejects, and the audit record.
 
-## 4. Finish
+## 5. Finish
 
 End with one **Demo results** checklist covering the steps that were relevant. Use **✅** for verified outcomes, **⏭️** for skipped steps, **⏳** for a decision still pending and **❌** for a check that failed. Pair each icon with text. A verified denial is a pass; an intentional rejection is a decision, not a failure.
 
-Use one bullet for setup, one for the masked read, one for the denial, one for the person's exception decision and any subsequent read, and one for the audit. Give a short piece of evidence for each verified check, such as the row count, `ACCESS_DENIED`, the verified expiry or the audit events. If the demo stopped early, mark later steps skipped. Do not copy example outcomes into the report.
+Use one bullet for setup, one for the masked read, one for the denial, one for the person's exception decision and any subsequent read, and one for the audit. Mention the chosen browser mode in setup and distinguish an installed UI from a browser that was actually opened. Give a short piece of evidence for each verified check, such as the row count, `ACCESS_DENIED`, the verified expiry or the audit events. If the demo stopped early, mark later steps skipped. Do not copy example outcomes into the report.
 
-When verified, give the actual demo project path. Offer the [optional UI handoff](../datatug-perimeter/SKILL.md#optional-ui-handoff) after a verified Customer read. It is separate from the demo's success. Onboarding ends here.
+When verified, give the actual demo project path. After a verified Customer read, give the [UI handoff](../datatug-perimeter/SKILL.md#optional-ui-handoff) for the mode chosen during setup. It is separate from the demo's success. Onboarding ends here.
 
-## 5. Their own database (only when asked)
+## 6. Their own database (only when asked)
 
 Ask what it is. Three kinds work today:
 

@@ -112,19 +112,25 @@ datatug policy exception audit --project datatug-demo --format json
 
 Show only events for this request, as a short list with the time and meaning of each event. An applied event records the person's approved scope; a used event ties the read to the agent session. Report missing events as unverified. If an exception is active, show its expiry and give the person `datatug policy exception revoke <id> --project datatug-demo` to end it early. Explain that the audit is an editable local record.
 
-Finish with the [onboarding checklist](../datatug-onboarding/SKILL.md#4-finish), including when Perimeter was invoked directly.
+Finish with the [onboarding checklist](../datatug-onboarding/SKILL.md#5-finish), including when Perimeter was invoked directly.
 
 ### Optional UI handoff
 
-The chat demo works offline. Keep the handoff separate from the checks above. After a verified Customer read, point to any **Open in DataTug** link or terminal command already provided by the native result card. Otherwise, offer the person a browser or terminal option on the machine that ran the demo:
+Keep the handoff separate from the checks above. After a verified Customer read, use the [browser mode chosen in setup](../datatug-onboarding/SKILL.md#2-choose-the-browser-ui-before-the-demo). A native result card can provide a handoff when it matches the person's choice. For a browser project handoff, give the matching command below to run in a terminal on the machine that ran the demo.
 
-- **Browser · open the demo project.** If requested, check `datatug web-ui list`. If a compatible UI is already installed, show the person this foreground command, using the actual demo directory if different. The server binds to loopback and serves only the demo project under the agent role. It opens the UI in the browser and prints a local URL. Use the URL from their terminal, including its short-lived code, rather than guessing a link or asking them to paste the code into chat. They can stop the server with **Ctrl+C**. The browser opens the project, not the chat's query result.
+- **Local browser · open the demo project offline.** Use the installed compatible UI. If an existing pin prevents automatic selection, offer the same command with `--web-ui=<compatible-version>` using the verified version. Leave the pin in place.
 
   ```bash
   datatug serve --project "$HOME/datatug/datatug-demo" --host 127.0.0.1 --as agent --role agent --web-ui --open-browser
   ```
 
-  If the local UI is missing or can't be served, explain that and offer the terminal handoff. Do not install a web UI or start a daemon as part of the demo.
+- **Hosted browser · open the demo project at DataTug.app.** The browser loads the interface over the internet and connects directly to the CLI on this machine for the demo data. If prompted, allow local network access in the browser.
+
+  ```bash
+  datatug serve --project "$HOME/datatug/datatug-demo" --host 127.0.0.1 --as agent --role agent --open-browser
+  ```
+
+  For either command, use the actual demo directory if different. The CLI serves only the demo project under the agent role, listens on loopback and opens the browser with a short-lived access code. If it doesn't open automatically, use the URL printed in the terminal. Do not guess a link or ask the person to paste the code into chat. The browser opens the project. **Ctrl+C** stops the foreground server. If it fails, offer the terminal handoff.
 
 - **Terminal · reopen the masked Customer preview.** Where the CLI advertises `--result-id` and `ui --result`, choose a fresh result ID. Show the exact query and ask before running it, explaining that it repeats the allowed read and saves a snapshot in the private local result store. Do not save Employee results or other data obtained through an exception. Give the person the second command with the real ID only if the CLI reports both a saved result and email masking. It opens those rows in a new local DataTug chat session without rerunning the query. If the terminal opens on the project explorer, press **Ctrl+G** to focus the saved result grid. Do not use this manual path when a native card handles results.
 
