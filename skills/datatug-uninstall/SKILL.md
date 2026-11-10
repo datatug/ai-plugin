@@ -24,7 +24,7 @@ Projects, account state, credentials, shell settings and marketplace registratio
 
 ## 🔍 Check availability and preview
 
-Check whether `datatug` is on PATH. If it is, check the relevant command's `--help` before invoking it. Some older releases can show general help and still exit successfully for unknown commands. Confirm the uninstall or reset help lists `--dry-run` and `--apply`, or that the disk help describes disk usage.
+Resolve `datatug` on PATH or reuse its verified absolute path from setup. If neither is available, check the official installer default read-only: `$HOME/.local/bin/datatug` on Unix, or `%LOCALAPPDATA%\DataTug\bin\datatug.exe` on Windows. If found, use that same executable for help, preview, and apply. Check the relevant command's `--help` before invoking it. Some older releases can show general help and still exit successfully for unknown commands. Confirm the uninstall or reset help lists `--dry-run` and `--apply`, or that the disk help describes disk usage.
 
 If the CLI or command is missing, explain the limitation. Do not reinstall DataTug to uninstall it. If they asked to remove only the agent skills, show the matching native command and ask before running it:
 
@@ -33,8 +33,14 @@ If the CLI or command is missing, explain the limitation. Do not reinstall DataT
 
 For other unavailable operations, give the verified package manager or installer instructions. Never guess paths, recursively delete a home directory, edit agent config by hand, or remove project or credential files.
 
-Show the dry-run actions, exact paths and counts in a compact table. Distinguish an archive move from a deletion. Byte totals are logical sizes, and the plugin manager may not provide a file count or size. A manual action needs the person's decision before any execution. Homebrew and running Windows executables are handled by the owner named in the preview.
+Show the dry-run actions, exact paths and counts in a compact table. Distinguish an archive move from a deletion. Byte totals are logical sizes, and the plugin manager may not provide a file count or size. A manual action blocks the entire apply. Show the owner command from the preview for separate approval, or preview a narrower selection. Homebrew and running Windows executables are handled by the owner named in the preview.
 
 ## ✅ Apply and verify
 
-Stop any running DataTug servers before removing their installation. Show the exact command with `--apply` in place of `--dry-run` and wait for approval. Apply the same component selection. Report only completed actions. If the CLI was removed, verify it no longer resolves on PATH. If an agent plugin was removed, use that agent's plugin list to verify it. Never remove a marketplace automatically. It may supply other plugins.
+If a local server is using selected files, ask the person to stop that server or get separate approval to stop it. A skills-only removal needs no server stop. Show the exact command with `--apply` in place of `--dry-run` and wait for approval. Apply the same component selection. Report only completed actions.
+
+- For CLI removal, verify the selected executable is gone and check whether a different copy still resolves on PATH.
+- For Codex skills, verify `datatug@datatug` is absent from `codex plugin list --json` (without `--available`).
+- For Claude Code skills, verify the user-scoped `datatug@datatug` is absent from `claude plugin list --json`.
+
+Keep marketplace registrations in place.
