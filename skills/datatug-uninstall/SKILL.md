@@ -37,7 +37,7 @@ Show the dry-run actions, exact paths and counts in a compact table. Distinguish
 
 ## ✅ Apply and verify
 
-If a local server is using selected files, ask the person to stop that server or get separate approval to stop it. A skills-only removal needs no server stop. Show the exact command with `--apply` in place of `--dry-run` and wait for approval. Apply the same component selection. Report only completed actions.
+If a local server is using selected files, ask the person to stop that server or get separate approval to stop it. A skills-only removal needs no server stop. Show the exact command with `--apply` in place of `--dry-run` and wait for approval. Apply the same component selection. List completed actions and surface any refusals or partial failures, including the recovery path if the CLI reports one.
 
 - For CLI removal, verify the selected executable is gone and check whether a different copy still resolves on PATH.
 - For Codex skills, verify `datatug@datatug` is absent from `codex plugin list --json` (without `--available`).
