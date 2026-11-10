@@ -53,10 +53,11 @@ If they would rather start with their own database, go to step 6, and offer the 
 
 ## 2. Choose the browser UI before the demo
 
-Explain the two options, then ask which the person wants. They can also choose **chat only** and use the terminal handoff later.
+Use **🌐 Choose how to open the demo** as the title. Offer these choices in the agent's picker if available, or as a short numbered list:
 
-- **Local web UI:** Install the browser app once and use it offline. The CLI serves both the interface and the demo data on this machine.
-- **Hosted web UI at [DataTug.app](https://datatug.app):** Open the interface online without installing it. It needs internet access to load and the browser may ask for permission to connect to the CLI on this machine.
+1. **Install the local web UI:** Install the browser app once and use it offline. Reuse it if already installed.
+2. **Use [DataTug.app](https://datatug.app):** Load the interface online without installing it. The browser may ask for permission to connect to the local CLI.
+3. **Stay in chat:** Skip browser setup and use the terminal handoff later if desired.
 
 **The demo data stay on your machine in both browser modes.** The CLI and the browser on the same machine exchange data over a local connection (`127.0.0.1`). The hosted option loads the interface from DataTug.app and gets the demo records directly from the local CLI.
 
@@ -82,15 +83,15 @@ datatug demo install --format json
 
 ## 4. Perimeter
 
-Run **`/datatug:datatug-perimeter`** (in other agents, the `datatug-perimeter` skill). It runs the allowed and masked read, the refused read, the exception the person applies or rejects, and the audit record.
+Run **`/datatug:datatug-perimeter`** (in other agents, the `datatug-perimeter` skill). Pass the chosen browser mode and the verified demo path. It runs the masked read, shows the browser handoff, then demonstrates the refusal, the person's exception decision and the audit.
 
 ## 5. Finish
 
-End with one **Demo results** checklist covering the steps that were relevant. Use **✅** for verified outcomes, **⏭️** for skipped steps, **⏳** for a decision still pending and **❌** for a check that failed. Pair each icon with text. A verified denial is a pass; an intentional rejection is a decision, not a failure.
+End with one **📋 Demo results** checklist covering the steps that were relevant. Use **✅** for verified outcomes, **⏭️** for skipped steps, **⏳** for a decision still pending and **❌** for a check that failed. Pair each icon with text. A verified denial is a pass; an intentional rejection is a decision, not a failure.
 
 Use one bullet for setup, one for the masked read, one for the denial, one for the person's exception decision and any subsequent read, and one for the audit. Mention the chosen browser mode in setup and distinguish an installed UI from a browser that was actually opened. Give a short piece of evidence for each verified check, such as the row count, `ACCESS_DENIED`, the verified expiry or the audit events. If the demo stopped early, mark later steps skipped. Do not copy example outcomes into the report.
 
-When verified, give the actual demo project path. After a verified Customer read, give the [UI handoff](../datatug-perimeter/SKILL.md#optional-ui-handoff) for the mode chosen during setup. It is separate from the demo's success. Onboarding ends here.
+When verified, give the actual demo project path. If the person chose a browser, include a separate **🌐 Open the demo** section with the [handoff](../datatug-perimeter/SKILL.md#optional-ui-handoff). Include the working link if a native card supplied one, or the command to start and open the browser if it is still unopened. Show this even if the Employee retry fails or is skipped. Onboarding ends here.
 
 ## 6. Their own database (only when asked)
 
