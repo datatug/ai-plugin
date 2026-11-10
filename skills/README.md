@@ -21,6 +21,7 @@ This plugin follows the same design as the sibling [`specscore`](https://github.
 | Skill | Purpose |
 |---|---|
 | [`datatug-install/`](datatug-install/SKILL.md) | Show install instructions for the `datatug` CLI. |
+| [`datatug-uninstall/`](datatug-uninstall/SKILL.md) | Preview and remove installed components, archive the demo separately, or inspect disk usage. |
 | [`datatug-onboarding/`](datatug-onboarding/SKILL.md) | First run after install: demo or own database → project → understanding → Perimeter demo, then stop. |
 | [`datatug-db-analyze/`](datatug-db-analyze/SKILL.md) | Metadata-first understanding of a database, one question, a project name; inferred vs verified. |
 | [`datatug-perimeter/`](datatug-perimeter/SKILL.md) | Perimeter demo and setup: allowed read, refused read, local request, human approve/narrow/reject in a terminal, masked field, audit. |
