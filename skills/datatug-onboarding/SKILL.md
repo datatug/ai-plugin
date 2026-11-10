@@ -15,7 +15,7 @@ Do not continue into investigations, Detective, Context Bags, Checks, Watch or d
 - **Never ask for passwords, tokens or connection strings.** For a database server, the person puts the connection string in an environment variable themselves. You only ever see the variable's name.
 - **Report only what you verified**: an exit code of 0, or the JSON a command printed. A printed command is not a result.
 - **Run only the commands below, as written.** Do not invent flags. If a command fails as unknown, say so and stop.
-- Keep every message to 2–4 lines. Say what the next command does before running it.
+- Keep updates brief, with room for a walkthrough, result tables and a final checklist. Before a command, say what the person should expect to see and why it matters.
 - The person can say **skip**, **stop** or **later** at any step. On a later run, re-check state (step 0) instead of starting over.
 
 ## 0. Where are we?
@@ -29,18 +29,27 @@ datatug projects -o json
 - **CLI missing:** every data and project step needs it. Follow <https://datatug.ai/install-skills.md> steps 1–2, then come back here.
 - **CLI too old:** if the `demo install --help` output does not list `--project-id`, the CLI is older than this flow. An unknown command can still exit 0 with the general help, so check for that flag, not the exit code. After a yes, run `datatug self-update --yes`, then check again.
 - **`projects` fails with "failed to get settings … no such file":** nothing is registered yet (older CLIs report it this way). Treat it as an empty list.
-- **The project list has `datatug-demo`:** the demo is already installed. Offer to go straight to the Perimeter demo (step 4).
+- **The project list has `datatug-demo`:** the demo is already installed. Give the preview below and continue to Perimeter after consent. Skip installation.
 - **Other projects exist:** ask whether to try the demo first or use one of them. Never change an existing project without a yes.
 
-## 1. Offer the demo (one question)
+## 1. Preview the demo
 
-If the person already said yes to a demo (for example in the install guide's last step), skip this question. Otherwise say, in their language:
+Before installing or querying, show this short agenda in the person's language. Show the preview even if they already said yes:
 
-> DataTug is ready. Shall I run the **2-minute demo**? It installs two tiny local databases (a music store in SQLite, support notes in inGitDB) into `~/datatug/datatug-demo`: no signup, nothing downloaded. It shows how you control what I can read, and it has one step you do yourself in a separate terminal window.
+> **DataTug Perimeter · 2-minute local demo**
+>
+> Perimeter is the set of rules DataTug checks before returning data to an AI agent. We'll use a sample music store and support notes on your machine.
+>
+> - **Allowed:** Read three customer records and see how DataTug masks their emails.
+> - **Blocked:** Try to read the Employee table and see why DataTug refuses.
+> - **Your decision:** Optionally approve, narrow or reject a short read exception in your own terminal.
+> - **Audit:** See what was requested, what you decided and whether the permission was used.
 
-That one yes covers the demo install and every **read** in the demo, including the attempt on a table that is not allowed. Changing the policy is never yours to do: the person does that step.
+If the demo isn't installed, say that setup unpacks SQLite and inGitDB sample data into `~/datatug/datatug-demo` and registers it in `~/.datatug.yaml`. No signup or download is needed. Show the exact install command from step 2 before asking. A yes to the stated demo covers the normal reads, including the expected refusal. Follow any stricter approval instructions the person gave. Ask separately before creating an exception proposal or saving a result for a UI handoff. The person applies or rejects the exception themselves.
 
-If they would rather start with their own database, go to step 6, and offer the demo later.
+If the person already consented to the demo, skip asking again for any step their consent covers.
+
+If they would rather start with their own database, go to step 5, and offer the demo later.
 
 ## 2. Install the demo
 
@@ -49,32 +58,22 @@ datatug demo install --format json
 ```
 
 - `"status":"installed"`, `"unchanged"` or `"repaired"`: continue.
-- `"preserved"` with a file list: the person edited those files. Leave them alone and say so.
-- A non-zero exit: show the error line and stop. If it says a file "does not match its pinned sha256", the demo files were changed: say so, and do not fetch the data some other way.
+- If `preserved` lists files, say which edits were kept. If it lists the demo policy or sensitivity labels, stop before querying and explain that the demo's expected access and masking rules may differ.
+- A non-zero exit: show the error line and go to the final checklist. If it says a file "does not match its pinned sha256", the demo files were changed: say so, and do not fetch the data some other way.
 
-## 3. Two lines about the data
-
-The demo ships with curated metadata, so there is no interview: "A music store: customers, invoices, tracks and staff (SQLite), plus support notes about customers (inGitDB). Emails, phone numbers and staff personal details are marked sensitive."
-
-## 4. Perimeter
+## 3. Perimeter
 
 Run **`/datatug:datatug-perimeter`** (in other agents, the `datatug-perimeter` skill). It runs the allowed and masked read, the refused read, the exception the person applies or rejects, and the audit record.
 
-## 5. Finish
+## 4. Finish
 
-Use the sentence that matches what happened:
+End with one **Demo results** checklist covering the steps that were relevant. Use **✅** for verified outcomes, **⏭️** for skipped steps, **⏳** for a decision still pending and **❌** for a check that failed. Pair each icon with text. A verified denial is a pass; an intentional rejection is a decision, not a failure.
 
-- **Applied:** "Done. I could read only what your rules allow, the sensitive values stayed masked, and the `Employee` table needed an exception that you applied yourself, in your own terminal. It ends on its own."
-- **Rejected:** "Done. I could read only what your rules allow, the sensitive values stayed masked, and when you rejected the exception I stopped. I can't read `Employee`."
-- **Stopped at the refusal:** "Done. I could read only what your rules allow, the sensitive values stayed masked, and the table you hadn't allowed was refused."
+Use one bullet for setup, one for the masked read, one for the denial, one for the person's exception decision and any subsequent read, and one for the audit. Give a short piece of evidence for each verified check, such as the row count, `ACCESS_DENIED`, the verified expiry or the audit events. If the demo stopped early, mark later steps skipped. Do not copy example outcomes into the report.
 
-Then, in every case:
+When verified, give the actual demo project path. Offer the [optional UI handoff](../datatug-perimeter/SKILL.md#optional-ui-handoff) after a verified Customer read. It is separate from the demo's success. Onboarding ends here.
 
-> The demo project is in `~/datatug/datatug-demo`. On this machine DataTug applies these rules itself. They keep an honest agent inside the lines but are not a security wall; for that, use a read-only database user. Onboarding ends here. If you like, I can connect one of your own databases next.
-
-Stop. If the person asks to connect their database, go to step 6.
-
-## 6. Their own database (only when asked)
+## 5. Their own database (only when asked)
 
 Ask what it is. Three kinds work today:
 
